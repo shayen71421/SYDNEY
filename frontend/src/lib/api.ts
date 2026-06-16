@@ -7,6 +7,9 @@ import type {
   GraphData,
   ResearchGaps,
   AISummary,
+  CompareResponse,
+  PublicationTrendsResponse,
+  WhyMattersResponse,
 } from "@/types";
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
@@ -61,4 +64,16 @@ export const api = {
     const params = gene ? `?gene=${gene}` : "";
     return fetchJSON<VariantDetail[]>(`/api/v1/variants${params}`);
   },
+
+  compareVariants: (query1: string, query2: string) =>
+    fetchJSON<CompareResponse>("/api/v1/compare", {
+      method: "POST",
+      body: JSON.stringify({ query1, query2 }),
+    }),
+
+  getPublicationTrends: (id: number) =>
+    fetchJSON<PublicationTrendsResponse>(`/api/v1/variants/${id}/publications/trends`),
+
+  getWhyMatters: (id: number) =>
+    fetchJSON<WhyMattersResponse>(`/api/v1/variants/${id}/why-matters`, { method: "POST" }),
 };

@@ -810,6 +810,95 @@ done
 
 ---
 
+## Benchmark Suite
+
+Regression test the full retrieval pipeline against known variants.
+
+### `benchmark.json`
+
+6 test cases with expected results:
+
+| Variant | Min Papers | Expected Confidence | Expected Significance |
+|---------|-----------|-------------------|----------------------|
+| TP53 R175H | ≥15 | Moderate, High | Pathogenic |
+| BRCA1 c.5266dupC | ≥15 | High | Pathogenic |
+| BRCA2 c.5946delT | ≥10 | Moderate, High | Likely benign |
+| TP53 R248W | ≥10 | Moderate, High | Pathogenic |
+| TP53 R273H | ≥10 | Moderate, High | Pathogenic |
+| TP53 R999X | 0 | Insufficient Evidence | null |
+
+### `benchmark.py`
+
+Runs the full pipeline (ClinVar + PubMed, evidence scoring, confidence engine) against each variant using a fresh SQLite database, validates against expectations, and prints a colored pass/fail report. Exit code is 0 only if all pass.
+
+```bash
+python benchmark.py                  # run all 6 variants
+python benchmark.py --variant R175H  # run single variant
+python benchmark.py --verbose        # show every check detail
+```
+
+The benchmark uses `sqlite:///./data/benchmark.db` and cleans up after itself.
+
+---
+
+## New Features (v0.2.0)
+
+### Variant Comparison
+
+Compare two variants side by side across key metrics.
+
+**Backend:** `POST /api/v1/compare`
+
+```json
+{
+  "query1": "TP53 R175H",
+  "query2": "TP53 R273H"
+}
+```
+
+Returns both variants' gene, paper count, confidence score/level, evidence volume/quality/agreement, and clinical significance.
+
+**Frontend:** "Compare" tab on the variant detail page with two input fields and a comparison table.
+
+### Confidence Breakdown
+
+Decompose the confidence score into its weighted components so users can inspect what drives the score.
+
+Displayed in the Overview tab below the confidence assessment cards:
+
+| Component | Weight | Calculation |
+|-----------|--------|-------------|
+| Evidence Volume | ×30% | `papers_count × 30` |
+| Evidence Quality | ×40% | `avg_study_quality × 100 × 40` |
+| Study Agreement | ×30% | `consensus_percent × 100 × 30` |
+| **Total** | **100%** | Sum of all three |
+
+Each component has a proportional bar and shows its raw value.
+
+### Publication Trend Analysis
+
+Visualize research activity over time for any variant.
+
+**Backend:** `GET /api/v1/variants/{id}/publications/trends`
+
+Groups evidence papers by year and returns a sorted list of `{year, count}` pairs.
+
+**Frontend:** "Publication Trends" tab with:
+- Recharts `BarChart` showing papers per year
+- Summary cards: years of data, total papers, most recent year, papers in latest year
+
+### Why This Variant Matters
+
+Generate a plain-language biological explanation of a variant's significance.
+
+**Backend:** `POST /api/v1/variants/{id}/why-matters`
+
+Uses Groq (Llama 3.3 70B) with a focused "biomedical educator" prompt to produce a 2-4 sentence explanation covering biological mechanism, clinical impact, and disease relevance.
+
+**Frontend:** Inline button inside the Clinical Significance card on the Overview tab. Clicking generates the explanation in-place.
+
+---
+
 ## Project Structure
 
 ```
@@ -831,7 +920,7 @@ sydney/
 │   │   │
 │   │   ├── api/
 │   │   │   ├── __init__.py
-│   │   │   └── routes.py              # 12 REST endpoints
+│   │   │   └── routes.py              # 15 REST endpoints
 │   │   │
 │   │   ├── services/
 │   │   │   ├── __init__.py
@@ -873,10 +962,14 @@ sydney/
 │   │   │   │   ├── Card.tsx           # Card container
 │   │   │   │   └── Tabs.tsx           # Tab navigation
 │   │   │   ├── variant/
-│   │   │   │   ├── EvidenceChart.tsx  # Recharts bar chart
-│   │   │   │   ├── EvidenceTable.tsx  # Sortable evidence table
-│   │   │   │   ├── KnowledgeGraph.tsx # SVG relationship graph
-│   │   │   │   └── GapsAnalysis.tsx   # Research gaps view
+│   │   │   │   │   │   ├── ConfidenceBreakdown.tsx # Weighted component bars
+│   │   │   │   ├── EvidenceChart.tsx       # Recharts bar chart
+│   │   │   │   ├── EvidenceTable.tsx       # Sortable evidence table
+│   │   │   │   ├── KnowledgeGraph.tsx      # SVG relationship graph
+│   │   │   │   ├── GapsAnalysis.tsx        # Research gaps view
+│   │   │   │   ├── PublicationTrends.tsx   # Recharts year-by-year chart
+│   │   │   │   ├── VariantCompare.tsx      # Side-by-side comparison
+│   │   │   │   └── WhyMatters.tsx          # AI biological explanation
 │   │   │   └── layout/
 │   │   │       ├── Header.tsx         # Nav header
 │   │   │       └── ThemeToggle.tsx    # Dark/light mode
@@ -911,6 +1004,8 @@ sydney/
 ├── .gitignore
 ├── pyproject.toml                     # Pytest config
 ├── run.sh                             # Single-command launcher
+├── benchmark.json                     # 6 benchmark test cases
+├── benchmark.py                       # Regression test runner
 └── README.md
 ```
 

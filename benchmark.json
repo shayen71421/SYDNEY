@@ -1,0 +1,51 @@
+[
+  {
+    "variant": "TP53 R175H",
+    "expected": {
+      "min_papers": 15,
+      "confidence": ["Moderate", "High"],
+      "clinical_significance": "Pathogenic"
+    }
+  },
+  {
+    "variant": "BRCA1 c.5266dupC",
+    "expected": {
+      "min_papers": 15,
+      "confidence": ["High"],
+      "clinical_significance": "Pathogenic"
+    }
+  },
+  {
+    "variant": "BRCA2 c.5946delT",
+    "expected": {
+      "min_papers": 10,
+      "confidence": ["Moderate", "High"],
+      "clinical_significance": "Likely benign"
+    }
+  },
+
+  {
+    "variant": "TP53 R248W",
+    "expected": {
+      "min_papers": 10,
+      "confidence": ["Moderate", "High"],
+      "clinical_significance": "Pathogenic"
+    }
+  },
+  {
+    "variant": "TP53 R273H",
+    "expected": {
+      "min_papers": 10,
+      "confidence": ["Moderate", "High"],
+      "clinical_significance": "Pathogenic"
+    }
+  },
+  {
+    "variant": "TP53 R999X",
+    "expected": {
+      "min_papers": 0,
+      "confidence": ["Insufficient Evidence"],
+      "clinical_significance": null
+    }
+  }
+]

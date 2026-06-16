@@ -80,6 +80,42 @@ class SearchHistoryResponse(BaseModel):
     queries: list[str] = []
 
 
+class CompareRequest(BaseModel):
+    query1: str = Field(..., min_length=1, max_length=200)
+    query2: str = Field(..., min_length=1, max_length=200)
+
+
+class CompareVariantData(BaseModel):
+    id: int
+    label: str
+    gene: str
+    clinical_significance: Optional[str] = None
+    papers: int = 0
+    confidence_score: float = 0.0
+    confidence_level: str = "Insufficient Evidence"
+    evidence_volume: int = 0
+    evidence_quality: float = 0.0
+    study_agreement: float = 0.0
+    clinvar_id: Optional[str] = None
+    review_status: Optional[str] = None
+
+
+class CompareResponse(BaseModel):
+    variant1: CompareVariantData
+    variant2: CompareVariantData
+
+
+class PublicationTrend(BaseModel):
+    year: int
+    count: int
+
+
+class PublicationTrendsResponse(BaseModel):
+    variant_id: int
+    label: str
+    trends: list[PublicationTrend]
+
+
 class ErrorResponse(BaseModel):
     detail: str
     code: Optional[str] = None

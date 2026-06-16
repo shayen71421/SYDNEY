@@ -68,3 +68,24 @@ export function useVariants(gene?: string) {
     queryFn: () => api.listVariants(gene),
   });
 }
+
+export function useCompareVariants() {
+  return useMutation({
+    mutationFn: ({ query1, query2 }: { query1: string; query2: string }) =>
+      api.compareVariants(query1, query2),
+  });
+}
+
+export function usePublicationTrends(id: number | null) {
+  return useQuery({
+    queryKey: ["publication-trends", id],
+    queryFn: () => api.getPublicationTrends(id!),
+    enabled: id !== null,
+  });
+}
+
+export function useWhyMatters() {
+  return useMutation({
+    mutationFn: (id: number) => api.getWhyMatters(id),
+  });
+}

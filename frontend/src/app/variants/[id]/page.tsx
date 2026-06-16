@@ -5,13 +5,15 @@ import Link from "next/link";
 import {
   ArrowLeft,
   Download,
-  FileText,
   Brain,
   Network,
   AlertTriangle,
   CheckCircle,
   XCircle,
   HelpCircle,
+  BarChart3,
+  ArrowLeftRight,
+  Sparkles,
 } from "lucide-react";
 import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/Card";
 import { Badge } from "@/components/ui/Badge";
@@ -21,7 +23,11 @@ import { EvidenceChart } from "@/components/variant/EvidenceChart";
 import { EvidenceTable } from "@/components/variant/EvidenceTable";
 import { KnowledgeGraph } from "@/components/variant/KnowledgeGraph";
 import { GapsAnalysis } from "@/components/variant/GapsAnalysis";
-import { useVariantDetail, useReport, useAISummary, useEvidence, useGraph, useGaps } from "@/lib/hooks";
+import { ConfidenceBreakdown } from "@/components/variant/ConfidenceBreakdown";
+import { PublicationTrends } from "@/components/variant/PublicationTrends";
+import { VariantCompare } from "@/components/variant/VariantCompare";
+import { WhyMatters } from "@/components/variant/WhyMatters";
+import { useVariantDetail, useReport, useAISummary, useEvidence, useGraph, useGaps, usePublicationTrends } from "@/lib/hooks";
 import { formatScore, significanceColor, confidenceColor, confidenceBg } from "@/lib/utils";
 import { api } from "@/lib/api";
 
@@ -35,6 +41,7 @@ export default function VariantPage({ params }: { params: Promise<{ id: string }
   const { data: evidence } = useEvidence(variantId);
   const { data: graph } = useGraph(variantId);
   const { data: gaps } = useGaps(variantId);
+  const { data: trends } = usePublicationTrends(variantId);
   const summaryMutation = useAISummary();
 
   if (detailLoading) {
@@ -81,6 +88,14 @@ export default function VariantPage({ params }: { params: Promise<{ id: string }
     if (s.includes("benign")) return <CheckCircle className="h-4 w-4" />;
     return <AlertTriangle className="h-4 w-4" />;
   };
+
+  const totalScore = report
+    ? Math.round(
+        report.evidence_volume * 30 +
+          report.evidence_quality * 100 * 40 +
+          report.study_agreement * 100 * 30
+      )
+    : 0;
 
   const tabs = [
     {
@@ -158,6 +173,13 @@ export default function VariantPage({ params }: { params: Promise<{ id: string }
                   </div>
                 </div>
               )}
+              <div className="mt-4 border-t border-slate-100 pt-4 dark:border-slate-700">
+                <div className="mb-2 flex items-center gap-1.5">
+                  <Sparkles className="h-3.5 w-3.5 text-slate-400" />
+                  <span className="text-xs font-medium text-slate-500">Why This Variant Matters</span>
+                </div>
+                <WhyMatters variantId={variantId} />
+              </div>
             </CardContent>
           </Card>
 
@@ -188,9 +210,9 @@ export default function VariantPage({ params }: { params: Promise<{ id: string }
                   </div>
                   <div className="rounded-lg border border-slate-200 p-3 text-center dark:border-slate-700">
                     <p className="text-2xl font-bold text-slate-900 dark:text-white">
-                      {formatScore(report.evidence_quality)}
+                      {totalScore}
                     </p>
-                    <p className="mt-1 text-xs text-slate-500">Quality</p>
+                    <p className="mt-1 text-xs text-slate-500">Weighted Total</p>
                   </div>
                 </div>
                 {report.evidence_overview && (
@@ -198,6 +220,12 @@ export default function VariantPage({ params }: { params: Promise<{ id: string }
                     {report.evidence_overview}
                   </p>
                 )}
+                <div className="mt-6 border-t border-slate-100 pt-4 dark:border-slate-700">
+                  <h4 className="mb-3 text-sm font-semibold text-slate-700 dark:text-slate-300">
+                    Confidence Breakdown
+                  </h4>
+                  <ConfidenceBreakdown report={report} />
+                </div>
               </CardContent>
             </Card>
           )}
@@ -304,6 +332,57 @@ export default function VariantPage({ params }: { params: Promise<{ id: string }
       ),
     },
     {
+      id: "trends",
+      label: "Publication Trends",
+      content: (
+        <Card>
+          <CardHeader>
+            <div className="flex items-center gap-2">
+              <BarChart3 className="h-5 w-5 text-slate-400" />
+              <CardTitle>Research Activity Trend</CardTitle>
+            </div>
+          </CardHeader>
+          <CardContent>
+            {trends && trends.trends.length > 0 ? (
+              <>
+                <PublicationTrends trends={trends.trends} />
+                <div className="mt-4 grid grid-cols-2 gap-3 text-sm md:grid-cols-4">
+                  <div className="rounded-lg border border-slate-200 p-3 text-center dark:border-slate-700">
+                    <p className="text-xl font-bold text-slate-900 dark:text-white">
+                      {trends.trends.length}
+                    </p>
+                    <p className="text-xs text-slate-500">Years of Data</p>
+                  </div>
+                  <div className="rounded-lg border border-slate-200 p-3 text-center dark:border-slate-700">
+                    <p className="text-xl font-bold text-slate-900 dark:text-white">
+                      {trends.trends.reduce((s, t) => s + t.count, 0)}
+                    </p>
+                    <p className="text-xs text-slate-500">Total Papers</p>
+                  </div>
+                  <div className="rounded-lg border border-slate-200 p-3 text-center dark:border-slate-700">
+                    <p className="text-xl font-bold text-slate-900 dark:text-white">
+                      {trends.trends[trends.trends.length - 1]?.year || "-"}
+                    </p>
+                    <p className="text-xs text-slate-500">Most Recent Year</p>
+                  </div>
+                  <div className="rounded-lg border border-slate-200 p-3 text-center dark:border-slate-700">
+                    <p className="text-xl font-bold text-slate-900 dark:text-white">
+                      {trends.trends[trends.trends.length - 1]?.count || 0}
+                    </p>
+                    <p className="text-xs text-slate-500">Papers (Latest Year)</p>
+                  </div>
+                </div>
+              </>
+            ) : (
+              <p className="py-6 text-center text-sm text-slate-500">
+                No publication trend data available. Search a variant with PubMed results to see trends.
+              </p>
+            )}
+          </CardContent>
+        </Card>
+      ),
+    },
+    {
       id: "graph",
       label: "Knowledge Graph",
       content: (
@@ -321,6 +400,23 @@ export default function VariantPage({ params }: { params: Promise<{ id: string }
       id: "gaps",
       label: "Research Gaps",
       content: <GapsAnalysis gaps={gaps || null} />,
+    },
+    {
+      id: "compare",
+      label: "Compare",
+      content: (
+        <Card>
+          <CardHeader>
+            <div className="flex items-center gap-2">
+              <ArrowLeftRight className="h-5 w-5 text-slate-400" />
+              <CardTitle>Variant Comparison</CardTitle>
+            </div>
+          </CardHeader>
+          <CardContent>
+            <VariantCompare />
+          </CardContent>
+        </Card>
+      ),
     },
   ];
 

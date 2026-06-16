@@ -8,7 +8,9 @@ from app.models.database import Variant, Gene, Evidence, Paper, Disease, Report 
 from app.models.schemas import (
     VariantSearchRequest, VariantSearchResponse, VariantDetailResponse,
     EvidenceResponse, ReportResponse, DashboardStats, GraphData,
-    SearchHistoryResponse, ErrorResponse
+    SearchHistoryResponse, ErrorResponse,
+    CompareRequest, CompareResponse, CompareVariantData,
+    PublicationTrend, PublicationTrendsResponse,
 )
 from app.services.variant_service import VariantAnalysisService
 from app.services.evidence_scoring import EvidenceScoringService
@@ -304,6 +306,87 @@ def get_variant_graph(variant_id: int, db: Session = Depends(get_db)):
     nodes = list(unique_nodes.values())
 
     return GraphData(nodes=nodes, edges=edges)
+
+
+@router.post("/compare", response_model=CompareResponse)
+def compare_variants(req: CompareRequest, db: Session = Depends(get_db)):
+    service = VariantAnalysisService(db)
+
+    def analyze(query: str) -> Optional[CompareVariantData]:
+        result = service.analyze_variant(query)
+        if not result:
+            return None
+        v = result["variant"]
+        g = result["gene"]
+        engine = ConfidenceEngine(db)
+        conf = engine.calculate_confidence(v.id)
+        evidence_count = db.query(Evidence).filter(Evidence.variant_id == v.id).count()
+        return CompareVariantData(
+            id=v.id,
+            label=v.hgvs_c or v.protein_change or query,
+            gene=g.symbol,
+            clinical_significance=v.clinical_significance,
+            papers=evidence_count,
+            confidence_score=conf["score"],
+            confidence_level=conf["level"],
+            evidence_volume=conf["evidence_volume"],
+            evidence_quality=conf["evidence_quality"],
+            study_agreement=conf["study_agreement"],
+            clinvar_id=v.clinvar_id,
+            review_status=v.review_status,
+        )
+
+    v1 = analyze(req.query1)
+    v2 = analyze(req.query2)
+
+    if not v1:
+        raise HTTPException(status_code=400, detail=f"Could not parse: {req.query1}")
+    if not v2:
+        raise HTTPException(status_code=400, detail=f"Could not parse: {req.query2}")
+
+    return CompareResponse(variant1=v1, variant2=v2)
+
+
+@router.get("/variants/{variant_id}/publications/trends", response_model=Optional[PublicationTrendsResponse])
+def get_publication_trends(variant_id: int, db: Session = Depends(get_db)):
+    variant = db.query(Variant).filter(Variant.id == variant_id).first()
+    if not variant:
+        raise HTTPException(status_code=404, detail="Variant not found")
+
+    results = (
+        db.query(Paper.year, func.count(Paper.id))
+        .join(Evidence, Evidence.paper_id == Paper.id)
+        .filter(Evidence.variant_id == variant_id)
+        .group_by(Paper.year)
+        .order_by(Paper.year)
+        .all()
+    )
+
+    gene = db.query(Gene).filter(Gene.id == variant.gene_id).first()
+    return PublicationTrendsResponse(
+        variant_id=variant.id,
+        label=f"{gene.symbol} {variant.hgvs_c or variant.protein_change or ''}" if gene else str(variant.id),
+        trends=[PublicationTrend(year=row[0], count=row[1]) for row in results if row[0]],
+    )
+
+
+@router.post("/variants/{variant_id}/why-matters")
+def get_why_matters(variant_id: int, db: Session = Depends(get_db)):
+    variant = db.query(Variant).filter(Variant.id == variant_id).first()
+    if not variant:
+        raise HTTPException(status_code=404, detail="Variant not found")
+
+    gene = db.query(Gene).filter(Gene.id == variant.gene_id).first()
+    ai_service = AISummaryService()
+    result = ai_service.generate_why_matters(
+        variant=variant.hgvs_c or variant.protein_change or "",
+        gene=gene.symbol if gene else "",
+        gene_full=gene.full_name if gene else "",
+        clinical_significance=variant.clinical_significance or "Unknown",
+        description=variant.description or "",
+        clinvar_data=variant.clinvar_data or {},
+    )
+    return {"explanation": result}
 
 
 @router.get("/variants")

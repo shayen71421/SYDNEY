@@ -91,3 +91,37 @@ class AISummaryService:
 
         except Exception as e:
             return f"Research gap analysis failed: {str(e)}"
+
+    def generate_why_matters(self, variant: str, gene: str, gene_full: str,
+                              clinical_significance: str, description: str,
+                              clinvar_data: dict) -> Optional[str]:
+        if not self.client:
+            return "Why this variant matters: Groq API key not configured."
+
+        context = f"Variant: {variant}\nGene: {gene} ({gene_full})\n"
+        context += f"Clinical Significance: {clinical_significance}\n"
+        if description:
+            context += f"Description: {description}\n"
+        diseases = clinvar_data.get("diseases", [])
+        if diseases:
+            context += f"Associated Diseases: {', '.join(diseases)}\n"
+
+        try:
+            completion = self.client.chat.completions.create(
+                model=settings.groq_model,
+                messages=[
+                    {
+                        "role": "system",
+                        "content": "You are a biomedical educator. Explain why a specific genetic variant matters in plain language that a medical student or researcher can understand. Focus on biological mechanism, clinical impact, and relevance to disease. Be concise (2-4 sentences). Do not hallucinate. Only use the information provided."
+                    },
+                    {
+                        "role": "user",
+                        "content": f"Explain why this variant matters biologically and clinically:\n\n{context}"
+                    }
+                ],
+                temperature=0.3,
+                max_tokens=300,
+            )
+            return completion.choices[0].message.content
+        except Exception as e:
+            return f"Failed to generate explanation: {str(e)}"

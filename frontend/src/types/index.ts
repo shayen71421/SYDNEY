@@ -94,3 +94,38 @@ export interface ResearchGaps {
 export interface AISummary {
   summary: string;
 }
+
+export interface CompareVariantData {
+  id: number;
+  label: string;
+  gene: string;
+  clinical_significance: string | null;
+  papers: number;
+  confidence_score: number;
+  confidence_level: string;
+  evidence_volume: number;
+  evidence_quality: number;
+  study_agreement: number;
+  clinvar_id: string | null;
+  review_status: string | null;
+}
+
+export interface CompareResponse {
+  variant1: CompareVariantData;
+  variant2: CompareVariantData;
+}
+
+export interface PublicationTrend {
+  year: number;
+  count: number;
+}
+
+export interface PublicationTrendsResponse {
+  variant_id: number;
+  label: string;
+  trends: PublicationTrend[];
+}
+
+export interface WhyMattersResponse {
+  explanation: string;
+}
