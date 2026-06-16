@@ -31,39 +31,52 @@ class ClinVarService:
         self._cache_path(key).write_text(json.dumps(data, indent=2))
 
     def fetch_variant_data(self, gene: str, variant: str) -> Optional[dict]:
-        cache_key = f"{gene}_{variant}"
+        normalized_variant = variant
+        if normalized_variant.startswith("p."):
+            normalized_variant = normalized_variant[2:]
+
+        cache_key = f"{gene}_{normalized_variant}"
         cached = self._load_cache(cache_key)
         if cached:
             return cached
 
         try:
-            term = f"{gene}[gene] AND {variant}[variant]"
-            params = {
-                "db": "clinvar",
-                "term": term,
-                "retmax": "5",
-                "retmode": "json",
-            }
-            resp = httpx.get(f"{self.base_url}/esearch.fcgi", params=params, timeout=15)
-            if resp.status_code != 200:
-                return None
+            search_terms = [
+                f"{gene}[gene] AND ({normalized_variant}[variant] OR {normalized_variant}[All Fields])",
+                f"{gene} {normalized_variant}",
+            ]
+            ids = []
+            for term in search_terms:
+                params = {
+                    "db": "clinvar",
+                    "term": term,
+                    "retmax": "5",
+                    "retmode": "json",
+                }
+                resp = httpx.get(f"{self.base_url}/esearch.fcgi", params=params, timeout=15)
+                if resp.status_code != 200:
+                    continue
+                data = resp.json()
+                ids = data.get("esearchresult", {}).get("idlist", [])
+                if ids:
+                    break
 
-            data = resp.json()
-            ids = data.get("esearchresult", {}).get("idlist", [])
             if not ids:
                 return None
 
+            vcv_ids = [f"VCV{id.zfill(9)}" for id in ids[:3]]
+
             fetch_params = {
                 "db": "clinvar",
-                "id": ",".join(ids[:3]),
-                "rettype": "variation",
+                "id": ",".join(vcv_ids),
+                "rettype": "vcv",
                 "retmode": "xml",
             }
             fetch_resp = httpx.get(f"{self.base_url}/efetch.fcgi", params=fetch_params, timeout=15)
             if fetch_resp.status_code != 200:
                 return None
 
-            result = self._parse_clinvar_xml(fetch_resp.text, ids[0])
+            result = self._parse_vcv_xml(fetch_resp.text, ids[0])
             self._save_cache(cache_key, result)
             return result
 
@@ -71,44 +84,48 @@ class ClinVarService:
             print(f"[ClinVar] Error: {e}")
             return None
 
-    def _parse_clinvar_xml(self, xml_text: str, clinvar_id: str) -> dict:
+    def _parse_vcv_xml(self, xml_text: str, clinvar_id: str) -> dict:
         result = {
             "clinvar_id": clinvar_id,
             "clinical_significance": "Unknown",
             "review_status": "No assertion",
             "description": "",
             "diseases": [],
-            "accession": clinvar_id,
+            "accession": f"VCV{clinvar_id}",
         }
 
         try:
             root = ET.fromstring(xml_text)
-            ns = {
-                "clinvar": "http://www.ncbi.nlm.nih.gov/ns/clinvar",
-            }
 
-            for cln_var in root.iter("ClinVarSet"):
-                for ref in cln_var.iter("ReferenceClinVarAssertion"):
-                    for sig in ref.iter("ClinicalSignificance"):
-                        desc = sig.find("Description")
+            for archive in root.iter("VariationArchive"):
+                name = archive.get("VariationName")
+                if name:
+                    result["description"] = name
+                accession = archive.get("Accession")
+                if accession:
+                    result["accession"] = accession
+
+                for cls in archive.iter("GermlineClassification"):
+                    desc = cls.find("Description")
+                    rs = cls.find("ReviewStatus")
+                    if desc is not None and desc.text:
+                        result["clinical_significance"] = desc.text.strip()
+                    if rs is not None and rs.text:
+                        result["review_status"] = rs.text.strip()
+
+                for cls in archive.iter("OncogenicityClassification"):
+                    if result["clinical_significance"] == "Unknown":
+                        desc = cls.find("Description")
                         if desc is not None and desc.text:
-                            result["clinical_significance"] = desc.text
-                        status = sig.find("ReviewStatus")
-                        if status is not None and status.text:
-                            result["review_status"] = status.text
+                            result["clinical_significance"] = desc.text.strip()
 
-                    for trait_set in ref.iter("TraitSet"):
-                        for trait in trait_set.iter("Trait"):
-                            name = trait.find("Name")
-                            if name is not None and name.text:
-                                result["diseases"].append(name.text)
-                                if not result["description"]:
-                                    result["description"] = name.text
-
-                for var in cln_var.iter("VariationArchive"):
-                    name = var.get("VariationName")
-                    if name:
-                        result["description"] = name
+                for trait_set in archive.iter("TraitSet"):
+                    for trait in trait_set.iter("Trait"):
+                        name_elem = trait.find("Name")
+                        if name_elem is not None and name_elem.text and name_elem.text.strip():
+                            disease = name_elem.text.strip()
+                            if disease not in result["diseases"]:
+                                result["diseases"].append(disease)
 
         except ET.ParseError:
             pass

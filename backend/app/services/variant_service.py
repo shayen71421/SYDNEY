@@ -23,14 +23,19 @@ class VariantAnalysisService:
 
     def parse_variant(self, query: str) -> Optional[dict]:
         query = query.strip()
+        if not query:
+            return None
+
         patterns = [
-            r"^(BRCA1|BRCA2|TP53|P53)\s+(c\.[A-Za-z0-9_>delinsup]+)$",
-            r"^(BRCA1|BRCA2|TP53|P53)\s+(p\.[A-Za-z0-9]+)$",
-            r"^(BRCA1|BRCA2|TP53|P53)\s+([A-Z]\d+[A-Z*])$",
-            r"^(BRCA1|BRCA2|TP53|P53)\s+(\w+)$",
+            (r"^(BRCA1|BRCA2|TP53|P53)\s+(c\.\d+[A-Za-z_>delinsup*]{1,30})$", None),
+            (r"^(BRCA1|BRCA2|TP53|P53)\s+(p\.[A-Za-z]{1,3}\d+[A-Za-z*]{1,5})$", None),
+            (r"^(BRCA1|BRCA2|TP53|P53)\s+([A-Z][a-z]{2}\d+[A-Za-z*]{1,5})$", None),
+            (r"^(BRCA1|BRCA2|TP53|P53)\s+([A-Z]\d+[A-Z*]{1,3})$", None),
+            (r"^(BRCA1|BRCA2|TP53|P53)\s+(\d+del[A-Z]+)$", None),
+            (r"^(BRCA1|BRCA2|TP53|P53)\s+(\d+ins[A-Z]+)$", None),
         ]
 
-        for pattern in patterns:
+        for pattern, _ in patterns:
             m = re.match(pattern, query, re.IGNORECASE)
             if m:
                 gene = m.group(1).upper()
@@ -38,14 +43,6 @@ class VariantAnalysisService:
                 if gene == "P53":
                     gene = "TP53"
                 return {"gene": gene, "change": change, "original": query}
-
-        gene_match = re.match(r"^(BRCA1|BRCA2|TP53)", query, re.IGNORECASE)
-        if gene_match:
-            return {"gene": gene_match.group(1).upper(), "change": query, "original": query}
-
-        for gene_alias in self.GENE_ALIASES:
-            if gene_alias.lower() in query.lower():
-                return {"gene": self.GENE_ALIASES[gene_alias], "change": query, "original": query}
 
         return None
 
