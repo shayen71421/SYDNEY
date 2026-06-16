@@ -1,0 +1,33 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    --background: 0 0% 100%;
+    --foreground: 222.2 84% 4.9%;
+  }
+
+  .dark {
+    --background: 222.2 84% 4.9%;
+    --foreground: 210 40% 98%;
+  }
+
+  body {
+    @apply bg-white text-slate-900 dark:bg-slate-900 dark:text-slate-100;
+  }
+}
+
+@layer components {
+  .sydney-gradient {
+    @apply bg-gradient-to-br from-sydney-50 via-white to-slate-50 dark:from-slate-900 dark:via-slate-800 dark:to-slate-900;
+  }
+
+  .score-bar {
+    @apply h-2 rounded-full bg-slate-200 dark:bg-slate-700 overflow-hidden;
+  }
+
+  .score-fill {
+    @apply h-full rounded-full transition-all duration-500;
+  }
+}
