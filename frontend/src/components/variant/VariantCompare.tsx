@@ -9,19 +9,18 @@ import { useCompareVariants } from "@/lib/hooks";
 import { formatScore, significanceColor } from "@/lib/utils";
 import type { CompareVariantData } from "@/types";
 
-export function VariantCompare() {
-  const [query1, setQuery1] = useState("");
+export function VariantCompare({ defaultQuery = "" }: { defaultQuery?: string }) {
   const [query2, setQuery2] = useState("");
   const [error, setError] = useState("");
   const compareMutation = useCompareVariants();
 
   const handleCompare = () => {
-    if (!query1.trim() || !query2.trim()) {
-      setError("Enter two variants to compare");
+    if (!defaultQuery.trim() || !query2.trim()) {
+      setError("Enter a variant to compare against");
       return;
     }
     setError("");
-    compareMutation.mutate({ query1: query1.trim(), query2: query2.trim() });
+    compareMutation.mutate({ query1: defaultQuery.trim(), query2: query2.trim() });
   };
 
   const Row = ({ label, v1, v2, format }: {
@@ -55,11 +54,9 @@ export function VariantCompare() {
       <div className="flex gap-3">
         <input
           type="text"
-          value={query1}
-          onChange={(e) => setQuery1(e.target.value)}
-          placeholder="e.g. TP53 R175H"
-          className="flex-1 rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm placeholder:text-slate-400 focus:border-sydney-500 focus:outline-none dark:border-slate-600 dark:bg-slate-800 dark:text-white"
-          onKeyDown={(e) => e.key === "Enter" && handleCompare()}
+          value={defaultQuery}
+          readOnly
+          className="flex-1 rounded-lg border border-slate-300 bg-slate-50 px-3 py-2 text-sm text-slate-600 dark:border-slate-600 dark:bg-slate-700 dark:text-slate-400"
         />
         <input
           type="text"

@@ -6,6 +6,7 @@ interface BadgeProps {
   children: React.ReactNode;
   variant?: "default" | "outline" | "success" | "warning" | "danger";
   className?: string;
+  onClick?: () => void;
 }
 
 export function Badge({ children, variant = "default", className }: BadgeProps) {

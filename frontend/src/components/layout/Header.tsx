@@ -28,7 +28,7 @@ export function Header() {
             Variants
           </Link>
           <a
-            href="https://github.com/anomalyco/sydney"
+            href="https://github.com/shayen71421/SYDNEY"
             target="_blank"
             rel="noopener noreferrer"
             className="text-slate-400 hover:text-slate-600"

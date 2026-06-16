@@ -86,12 +86,39 @@ export function GapsAnalysis({ gaps }: Props) {
             <CardTitle>AI-Generated Research Directions</CardTitle>
           </CardHeader>
           <CardContent>
-            <div className="prose prose-sm max-w-none dark:prose-invert">
+            <div className="space-y-3">
               {gaps.ai_analysis.split("\n").map((line, i) => {
-                if (!line.trim()) return <br key={i} />;
+                const trimmed = line.trim();
+                if (!trimmed) return <div key={i} className="h-2" />;
+
+                const boldMatch = trimmed.match(/^\*{2}(.+?)\*{2}:?\s*$/);
+                if (boldMatch) {
+                  return (
+                    <h3 key={i} className="text-sm font-semibold text-slate-800 dark:text-slate-200">
+                      {boldMatch[1]}
+                    </h3>
+                  );
+                }
+
+                if (trimmed.startsWith("* ")) {
+                  return (
+                    <li key={i} className="ml-4 text-sm text-slate-600 dark:text-slate-400">
+                      {trimmed.replace(/^\*\s+/, "")}
+                    </li>
+                  );
+                }
+
+                if (/^\d+\.\s+/.test(trimmed)) {
+                  return (
+                    <p key={i} className="text-sm font-medium text-slate-700 dark:text-slate-300">
+                      {trimmed}
+                    </p>
+                  );
+                }
+
                 return (
-                  <p key={i} className="text-sm text-slate-700 dark:text-slate-300">
-                    {line}
+                  <p key={i} className="text-sm text-slate-600 dark:text-slate-400 leading-relaxed">
+                    {trimmed}
                   </p>
                 );
               })}

@@ -413,7 +413,7 @@ export default function VariantPage({ params }: { params: Promise<{ id: string }
             </div>
           </CardHeader>
           <CardContent>
-            <VariantCompare />
+            <VariantCompare defaultQuery={`${detail.gene} ${detail.hgvs_c || detail.protein_change || ""}`} />
           </CardContent>
         </Card>
       ),
