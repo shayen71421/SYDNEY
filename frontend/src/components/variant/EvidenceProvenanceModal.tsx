@@ -69,9 +69,10 @@ export function EvidenceProvenanceModal({ data, onClose }: Props) {
                 </div>
 
                 <div className="mt-1.5 flex flex-wrap gap-x-4 gap-y-0.5 text-[10px] text-slate-400">
-                  <span>Vol ×30%: {paper.volume_contrib.toFixed(3)}</span>
-                  <span>Qual ×40%: {paper.quality_contrib.toFixed(3)}</span>
-                  <span>Agree ×30%: {paper.agreement_contrib.toFixed(3)}</span>
+                  <span>Vol ×25%: {paper.volume_contrib.toFixed(3)}</span>
+                  <span>Qual ×35%: {paper.quality_contrib.toFixed(3)}</span>
+                  <span>Agree ×25%: {paper.agreement_contrib.toFixed(3)}</span>
+                  <span>Review ×15%: {(paper as any).review_contrib?.toFixed(3) || "0.000"}</span>
                   <span className="font-medium text-slate-500">Contrib: {paper.total_contrib.toFixed(3)}</span>
                 </div>
               </div>

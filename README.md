@@ -186,7 +186,7 @@ evidence_quality = average study_quality_score across all papers
   ↓
 study_agreement = consistency of clinical_significance across papers
   ↓
-confidence_score = (0.30 × volume) + (0.40 × quality) + (0.30 × agreement)
+confidence_score = (0.25 × volume) + (0.35 × quality) + (0.25 × agreement) + (0.15 × clinvar_review_strength)
   ↓
 Level mapping:
   score >= 0.70 → High
@@ -416,16 +416,17 @@ EvidenceScore = 0.50 × relevance + 0.30 × study_quality + 0.20 × recency
 **Formula:**
 
 ```
-ConfidenceScore = 0.30 × volume_score + 0.40 × quality_score + 0.30 × agreement_score
+ConfidenceScore = (0.25 × volume_score) + (0.35 × quality_score) + (0.25 × agreement_score) + (0.15 × clinvar_review_strength)
 ```
 
 **Components:**
 
 | Component | Weight | Calculation |
 |-----------|--------|-------------|
-| Evidence Volume | 30% | Logarithmic scale based on paper count: 0 papers = 0.0, 1-2 = 0.2, 3-4 = 0.4, 5-9 = 0.6, 10-19 = 0.8, 20+ = 1.0 |
-| Evidence Quality | 40% | Average `study_quality_score` across all papers (0.0–1.0) |
-| Study Agreement | 30% | Proportion of papers with the same clinical significance classification (0.0–1.0) |
+| Evidence Volume | 25% | Logarithmic scale based on paper count: 0 papers = 0.0, 1-2 = 0.2, 3-4 = 0.4, 5-9 = 0.6, 10-19 = 0.8, 20+ = 1.0 |
+| Evidence Quality | 35% | Average `study_quality_score` across all papers (0.0–1.0) |
+| Study Agreement | 25% | Proportion of papers with the same clinical significance classification (0.0–1.0) |
+| ClinVar Review Strength | 15% | Maps `review_status` to a score: expert panel = 1.0, multi-submitter = 0.9, single submitter = 0.7, conflicting = 0.5, no assertion criteria = 0.3, no assertion = 0.0 |
 
 **Levels:**
 
@@ -533,7 +534,8 @@ http://localhost:8000/api/v1
 | `POST` | `/variants/{id}/summary` | Generate AI summary (Groq) | None |
 | `GET` | `/variants/{id}/gaps` | Research gap analysis | None |
 | `GET` | `/variants/{id}/evidence-provenance` | Per-paper score contribution breakdown | None |
-| `GET` | `/variants/{id}/acmg` | ACMG/AMP variant classification | None |
+| `GET` | `/variants/{id}/acmg` | ACMG-inferred variant classification | None |
+| `GET` | `/variants/{id}/classification-timeline` | Historical ClinVar classification changes | None |
 | `GET` | `/variants/{id}/report/pdf` | Download PDF report | None |
 | `GET` | `/graph/{id}` | Knowledge graph data | None |
 | `POST` | `/compare` | Compare two variants side by side | None |
@@ -626,6 +628,7 @@ r"^(GENE)\s+(\d+ins[A-Z]+)$"                         # Legacy ins notation
 - XML namespaces are NOT required (VCV XML doesn't use them)
 - Falls back from `gene[variant]` query to `gene variant` plain text query
 - Caches aggressively to avoid hitting NCBI rate limits
+- Parses `classification_history` from all `VariationArchive` + `GermlineClassification` entries, collecting `(classification, review_status, date)` triplets — enables the Classification Timeline feature
 
 ### `PubMedService`
 
@@ -660,7 +663,7 @@ r"^(GENE)\s+(\d+ins[A-Z]+)$"                         # Legacy ins notation
 ### `ACMGService`
 
 **Critical Implementation Details:**
-- `classify(variant_id)` — Evaluates ACMG/AMP 2015 criteria against available variant data
+- `classify(variant_id)` — Evaluates ACMG/AMP 2015 criteria against available variant data (limited to evidence we have: ClinVar significance, publication volume, variant type, and review status). Does NOT replace full ACMG interpretation which requires population frequency, segregation, functional studies, and family history.
 - Detects null variants (PVS1) via variant_type + HGVS c. + protein_change pattern matching
 - Uses ClinVar significance and review status for PS1, BS1, BP4, PM2
 - Evidence volume thresholds trigger PP4 (≥5 papers) and PS4 (≥10 papers)
@@ -892,7 +895,7 @@ Compare two variants side by side across key metrics.
 }
 ```
 
-Returns both variants' gene, paper count, confidence score/level, evidence volume/quality/agreement, and clinical significance.
+Returns both variants' gene, paper count, confidence score/level, evidence volume/quality/agreement, clinvar_review_strength, and clinical significance.
 
 **Frontend:** "Compare" tab on the variant detail page with two input fields and a comparison table.
 
@@ -904,10 +907,11 @@ Displayed in the Overview tab below the confidence assessment cards:
 
 | Component | Weight | Calculation |
 |-----------|--------|-------------|
-| Evidence Volume | ×30% | `papers_count × 30` |
-| Evidence Quality | ×40% | `avg_study_quality × 100 × 40` |
-| Study Agreement | ×30% | `consensus_percent × 100 × 30` |
-| **Total** | **100%** | Sum of all three |
+| Evidence Volume | ×25% | `papers_count × 25` |
+| Evidence Quality | ×35% | `avg_study_quality × 100 × 35` |
+| Study Agreement | ×25% | `consensus_percent × 100 × 25` |
+| ClinVar Review Strength | ×15% | `clinvar_review_strength × 100 × 15` |
+| **Total** | **100%** | Sum of all four |
 
 Each component has a proportional bar and shows its raw value.
 
@@ -931,7 +935,9 @@ Generate a plain-language biological explanation of a variant's significance.
 
 Uses Groq (Llama 3.3 70B) with a focused "biomedical educator" prompt to produce a 2-4 sentence explanation covering biological mechanism, clinical impact, and disease relevance.
 
-**Frontend:** Inline button inside the Clinical Significance card on the Overview tab. Clicking generates the explanation in-place.
+Generated explanations are **cached in the database** (`variant.why_matters` column). The first call generates via Groq and stores the result; subsequent calls return the cached value instantly with zero API cost.
+
+**Frontend:** Inline button inside the Clinical Significance card on the Overview tab. Clicking generates the explanation in-place. Subsequent visits to the same variant show the explanation immediately. 
 
 ### Evidence Provenance
 
@@ -944,21 +950,22 @@ Returns each paper with its contribution breakdown:
 | Field | Description |
 |-------|-------------|
 | `evidence_score` | Combined score (0.50×relevance + 0.30×quality + 0.20×recency) |
-| `volume_contrib` | Volume component = 0.30 × volume_score (normalized to the variant's evidence volume tier) |
-| `quality_contrib` | Quality component = 0.40 × study_quality_score |
-| `agreement_contrib` | Agreement component = 0.30 × study_agreement |
-| `total_contrib` | Sum of all three components |
+| `volume_contrib` | Volume component = 0.25 × volume_score (normalized to the variant's evidence volume tier) |
+| `quality_contrib` | Quality component = 0.35 × study_quality_score |
+| `agreement_contrib` | Agreement component = 0.25 × study_agreement |
+| `review_contrib` | ClinVar review component = 0.15 × clinvar_review_strength |
+| `total_contrib` | Sum of all four components |
 | `contribution_pct` | `(total_contrib / confidence_score) × 100` — percent of total confidence |
 
 **Frontend:** The Score card in the Confidence Assessment section is clickable. Clicking opens a modal with:
 - Per-paper contribution bars (color-coded by contribution %)
 - Raw scores (relevance, quality, recency, evidence score)
-- Contribution component details (volume ×30%, quality ×40%, agreement ×30%)
+- Contribution component details (volume ×25%, quality ×35%, agreement ×25%, review ×15%)
 - Direct link to PubMed for each paper
 
-### ACMG/AMP Classification
+### ACMG-Inferred Classification
 
-Automated variant interpretation using ACMG/AMP 2015 guidelines, adapted for the available evidence.
+Automated variant interpretation inspired by ACMG/AMP 2015 guidelines, adapted for the available evidence. This is NOT a substitute for full ACMG/AMP classification, which requires population frequency data, segregation studies, functional assays, and family history not available in this tool. Sydney's implementation covers a subset of criteria (PVS1, PS1, PS4, PM2, PM4, PP3, PP4, BS1, BP4) based on ClinVar data and publication volume.
 
 **Backend:** `GET /api/v1/variants/{id}/acmg`
 
@@ -992,7 +999,7 @@ else:
     else → Uncertain significance
 ```
 
-**Frontend:** "ACMG Classification" tab on the variant detail page showing:
+**Frontend:** "ACMG-Inferred Classification" tab on the variant detail page showing:
 - Overall classification badge (Pathogenic/Likely pathogenic/Uncertain significance/Likely benign/Benign)
 - Pathogenic, benign, and net score cards
 - Per-criteria breakdown with strength badges (color-coded by evidence level)
@@ -1007,6 +1014,36 @@ else:
 | PS4 | Strong | Well-studied variant with 18 publications |
 | PS1 | Strong | ClinVar: Pathogenic, Review: reviewed by expert panel |
 | **Result** | **Likely pathogenic** | **Pathogenic score: 8, Benign score: 0, Net: +8** |
+
+### Classification Timeline
+
+Shows how ClinVar's clinical significance has changed over time across different submissions and review status updates.
+
+**Backend:** `GET /api/v1/variants/{id}/classification-timeline`
+
+Extracts `classification_history` from the VCV XML during ClinVar fetch. Each entry records a `(classification, review_status, date)` triplet found across all `VariationArchive` and `GermlineClassification` elements in the ClinVar record.
+
+```json
+{
+  "variant_id": 1,
+  "label": "TP53 R175H",
+  "current_classification": "Pathogenic",
+  "current_review_status": "reviewed by expert panel",
+  "history": [
+    {"classification": "Pathogenic", "review_status": "reviewed by expert panel", "date": "2024-06-15"},
+    {"classification": "Pathogenic", "review_status": "criteria provided, multiple submitters, no conflicts", "date": "2020-03-10"},
+    {"classification": "Likely pathogenic", "review_status": "criteria provided, single submitter", "date": "2016-11-22"}
+  ]
+}
+```
+
+**Frontend:** "Classification Timeline" tab on the variant detail page with:
+- Vertical numbered timeline with color-coded significance badges
+- Review status for each entry
+- Formatted dates
+- Current status summary card at the bottom
+
+If no historical data is available (single submission), the component displays a clear message rather than an empty timeline.
 
 ---
 
@@ -1031,7 +1068,7 @@ sydney/
 │   │   │
 │   │   ├── api/
 │   │   │   ├── __init__.py
-│   │   │   └── routes.py              # 14 REST endpoints
+│   │   │   └── routes.py              # 17 REST endpoints
 │   │   │
 │   │   ├── services/
 │   │   │   ├── __init__.py
@@ -1042,7 +1079,7 @@ sydney/
 │   │   │   ├── confidence_engine.py   # Confidence levels (High/Moderate/Low)
 │   │   │   ├── ai_summary.py          # Groq API integration (Llama 3.3 70B)
 │   │   │   ├── research_gaps.py       # Rule-based gap detection
-│   │   │   ├── acmg_service.py        # ACMG/AMP variant classification
+│   │   │   ├── acmg_service.py        # ACMG-inferred variant classification
 │   │   │   └── report_generator.py    # ReportLab PDF generation
 │   │   │
 │   │   └── db/
@@ -1083,7 +1120,9 @@ sydney/
 │   │   │   │   ├── VariantCompare.tsx      # Side-by-side comparison
 │   │   │   │   ├── WhyMatters.tsx          # AI biological explanation
 │   │   │   │   ├── EvidenceProvenanceModal.tsx  # Per-paper contribution modal
-│   │   │   │   └── ACMGClassification.tsx       # ACMG/AMP criteria display
+│   │   │   │   ├── EvidenceProvenanceModal.tsx  # Per-paper contribution modal
+│   │   │   │   ├── ACMGClassification.tsx       # ACMG-inferred criteria display
+│   │   │   │   └── ClassificationTimeline.tsx   # ClinVar classification history
 │   │   │   └── layout/
 │   │   │       ├── Header.tsx         # Nav header
 │   │   │       └── ThemeToggle.tsx    # Dark/light mode

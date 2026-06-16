@@ -92,6 +92,7 @@ class ClinVarService:
             "description": "",
             "diseases": [],
             "accession": f"VCV{clinvar_id}",
+            "classification_history": [],
         }
 
         try:
@@ -105,13 +106,30 @@ class ClinVarService:
                 if accession:
                     result["accession"] = accession
 
+                archive_date = archive.get("DateCreated") or archive.get("DateLastUpdated") or ""
+
                 for cls in archive.iter("GermlineClassification"):
                     desc = cls.find("Description")
                     rs = cls.find("ReviewStatus")
+                    date_elem = cls.find("DateLastEvaluated")
+                    cls_date = date_elem.text.strip() if date_elem is not None and date_elem.text else archive_date
+
                     if desc is not None and desc.text:
-                        result["clinical_significance"] = desc.text.strip()
-                    if rs is not None and rs.text:
-                        result["review_status"] = rs.text.strip()
+                        cls_sig = desc.text.strip()
+                        cls_rs = rs.text.strip() if rs is not None and rs.text else "No assertion"
+
+                        if result["clinical_significance"] == "Unknown":
+                            result["clinical_significance"] = cls_sig
+                        if result["review_status"] == "No assertion":
+                            result["review_status"] = cls_rs
+
+                        entry = {
+                            "classification": cls_sig,
+                            "review_status": cls_rs,
+                            "date": cls_date,
+                        }
+                        if entry not in result["classification_history"]:
+                            result["classification_history"].append(entry)
 
                 for cls in archive.iter("OncogenicityClassification"):
                     if result["clinical_significance"] == "Unknown":

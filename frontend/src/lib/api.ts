@@ -12,6 +12,7 @@ import type {
   WhyMattersResponse,
   EvidenceProvenanceResponse,
   ACMGClassificationResponse,
+  ClassificationTimelineResponse,
 } from "@/types";
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
@@ -84,4 +85,7 @@ export const api = {
 
   getACMGClassification: (id: number) =>
     fetchJSON<ACMGClassificationResponse>(`/api/v1/variants/${id}/acmg`),
+
+  getClassificationTimeline: (id: number) =>
+    fetchJSON<ClassificationTimelineResponse>(`/api/v1/variants/${id}/classification-timeline`),
 };

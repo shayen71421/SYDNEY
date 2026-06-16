@@ -105,3 +105,11 @@ export function useACMGClassification(id: number | null) {
     enabled: id !== null,
   });
 }
+
+export function useClassificationTimeline(id: number | null) {
+  return useQuery({
+    queryKey: ["classification-timeline", id],
+    queryFn: () => api.getClassificationTimeline(id!),
+    enabled: id !== null,
+  });
+}

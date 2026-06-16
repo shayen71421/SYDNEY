@@ -43,6 +43,7 @@ export interface ReportData {
   evidence_volume: number;
   evidence_quality: number;
   study_agreement: number;
+  clinvar_review_strength: number;
   executive_summary: string | null;
   clinical_significance: string | null;
   disease_associations: Record<string, unknown>[];
@@ -106,6 +107,7 @@ export interface CompareVariantData {
   evidence_volume: number;
   evidence_quality: number;
   study_agreement: number;
+  clinvar_review_strength: number;
   clinvar_id: string | null;
   review_status: string | null;
 }
@@ -144,6 +146,7 @@ export interface EvidenceProvenanceItem {
   volume_contrib: number;
   quality_contrib: number;
   agreement_contrib: number;
+  review_contrib: number;
   total_contrib: number;
   contribution_pct: number;
 }
@@ -172,4 +175,18 @@ export interface ACMGClassificationResponse {
   net_score: number;
   summary: string;
   total_evidence_papers: number;
+}
+
+export interface ClassificationEntry {
+  classification: string;
+  review_status: string;
+  date: string;
+}
+
+export interface ClassificationTimelineResponse {
+  variant_id: number;
+  label: string;
+  current_classification: string;
+  current_review_status: string;
+  history: ClassificationEntry[];
 }

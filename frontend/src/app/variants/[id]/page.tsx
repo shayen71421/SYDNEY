@@ -26,10 +26,11 @@ import { GapsAnalysis } from "@/components/variant/GapsAnalysis";
 import { ConfidenceBreakdown } from "@/components/variant/ConfidenceBreakdown";
 import { EvidenceProvenanceModal } from "@/components/variant/EvidenceProvenanceModal";
 import { ACMGClassification } from "@/components/variant/ACMGClassification";
+import { ClassificationTimeline } from "@/components/variant/ClassificationTimeline";
 import { PublicationTrends } from "@/components/variant/PublicationTrends";
 import { VariantCompare } from "@/components/variant/VariantCompare";
 import { WhyMatters } from "@/components/variant/WhyMatters";
-import { useVariantDetail, useReport, useAISummary, useEvidence, useGraph, useGaps, usePublicationTrends, useEvidenceProvenance, useACMGClassification } from "@/lib/hooks";
+import { useVariantDetail, useReport, useAISummary, useEvidence, useGraph, useGaps, usePublicationTrends, useEvidenceProvenance, useACMGClassification, useClassificationTimeline } from "@/lib/hooks";
 import { formatScore, significanceColor, confidenceColor, confidenceBg } from "@/lib/utils";
 import type { ACMGClassificationResponse } from "@/types";
 import { api } from "@/lib/api";
@@ -48,6 +49,7 @@ export default function VariantPage({ params }: { params: Promise<{ id: string }
   const { data: trends } = usePublicationTrends(variantId);
   const { data: provenance } = useEvidenceProvenance(showProvenance ? variantId : null);
   const { data: acmg } = useACMGClassification(variantId);
+  const { data: timeline } = useClassificationTimeline(variantId);
   const summaryMutation = useAISummary();
 
   if (detailLoading) {
@@ -97,9 +99,10 @@ export default function VariantPage({ params }: { params: Promise<{ id: string }
 
   const totalScore = report
     ? Math.round(
-        report.evidence_volume * 30 +
-          report.evidence_quality * 100 * 40 +
-          report.study_agreement * 100 * 30
+        report.evidence_volume * 25 +
+          report.evidence_quality * 100 * 35 +
+          report.study_agreement * 100 * 25 +
+          (report.clinvar_review_strength || 0) * 100 * 15
       )
     : 0;
 
@@ -411,6 +414,11 @@ export default function VariantPage({ params }: { params: Promise<{ id: string }
       content: <GapsAnalysis gaps={gaps || null} />,
     },
     {
+      id: "timeline",
+      label: "Classification Timeline",
+      content: <ClassificationTimeline data={timeline || null} />,
+    },
+    {
       id: "compare",
       label: "Compare",
       content: (
@@ -429,7 +437,7 @@ export default function VariantPage({ params }: { params: Promise<{ id: string }
     },
     {
       id: "acmg",
-      label: "ACMG Classification",
+      label: "ACMG-Inferred Classification",
       content: <ACMGCard acmg={acmg || null} />,
     },
   ];
@@ -440,7 +448,7 @@ export default function VariantPage({ params }: { params: Promise<{ id: string }
         <CardHeader>
           <div className="flex items-center gap-2">
             <AlertTriangle className="h-5 w-5 text-slate-400" />
-            <CardTitle>ACMG/AMP Variant Interpretation</CardTitle>
+            <CardTitle>ACMG-Inferred Variant Classification</CardTitle>
           </div>
         </CardHeader>
         <CardContent>

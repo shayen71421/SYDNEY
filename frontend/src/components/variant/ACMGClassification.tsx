@@ -35,7 +35,7 @@ export function ACMGClassification({ acmg }: Props) {
     return (
       <Card>
         <CardContent className="py-8 text-center text-sm text-slate-500">
-          ACMG classification will be available after variant analysis.
+          ACMG-inferred classification will be available after variant analysis.
         </CardContent>
       </Card>
     );
@@ -49,7 +49,7 @@ export function ACMGClassification({ acmg }: Props) {
       <Card>
         <CardHeader>
           <div className="flex items-center justify-between">
-            <CardTitle>ACMG/AMP Classification</CardTitle>
+            <CardTitle>ACMG-Inferred Classification</CardTitle>
             <Badge variant={acmg.classification === "Pathogenic" || acmg.classification === "Likely pathogenic" ? "danger" : acmg.classification === "Uncertain significance" ? "warning" : "success"}>
               {acmg.classification}
             </Badge>

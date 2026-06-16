@@ -13,6 +13,7 @@ from app.models.schemas import (
     PublicationTrend, PublicationTrendsResponse,
     EvidenceProvenanceResponse, EvidenceProvenanceItem,
     ACMGClassificationResponse, ACMGCriterion,
+    ClassificationTimelineResponse, ClassificationEntry,
 )
 from app.services.variant_service import VariantAnalysisService
 from app.services.evidence_scoring import EvidenceScoringService
@@ -335,6 +336,7 @@ def compare_variants(req: CompareRequest, db: Session = Depends(get_db)):
             evidence_volume=conf["evidence_volume"],
             evidence_quality=conf["evidence_quality"],
             study_agreement=conf["study_agreement"],
+            clinvar_review_strength=conf.get("clinvar_review_strength", 0.0),
             clinvar_id=v.clinvar_id,
             review_status=v.review_status,
         )
@@ -379,6 +381,9 @@ def get_why_matters(variant_id: int, db: Session = Depends(get_db)):
     if not variant:
         raise HTTPException(status_code=404, detail="Variant not found")
 
+    if variant.why_matters:
+        return {"explanation": variant.why_matters}
+
     gene = db.query(Gene).filter(Gene.id == variant.gene_id).first()
     ai_service = AISummaryService()
     result = ai_service.generate_why_matters(
@@ -389,6 +394,9 @@ def get_why_matters(variant_id: int, db: Session = Depends(get_db)):
         description=variant.description or "",
         clinvar_data=variant.clinvar_data or {},
     )
+    if result:
+        variant.why_matters = result
+        db.commit()
     return {"explanation": result}
 
 
@@ -406,14 +414,16 @@ def get_evidence_provenance(variant_id: int, db: Session = Depends(get_db)):
     conf = engine.calculate_confidence(variant_id)
 
     items = []
+    crs = conf.get("clinvar_review_strength", 0.0)
     for ev in top_evidence:
-        volume_contrib = 0.30 * (1.0 if conf["evidence_volume"] >= 20 else
+        volume_contrib = 0.25 * (1.0 if conf["evidence_volume"] >= 20 else
                                  0.8 if conf["evidence_volume"] >= 10 else
                                  0.6 if conf["evidence_volume"] >= 5 else
                                  0.4 if conf["evidence_volume"] >= 3 else 0.2)
-        quality_contrib = 0.40 * (ev["study_quality_score"] or 0)
-        agreement_contrib = 0.30 * (conf["study_agreement"])
-        total_contrib = volume_contrib + quality_contrib + agreement_contrib
+        quality_contrib = 0.35 * (ev["study_quality_score"] or 0)
+        agreement_contrib = 0.25 * (conf["study_agreement"])
+        review_contrib = 0.15 * crs
+        total_contrib = volume_contrib + quality_contrib + agreement_contrib + review_contrib
         contribution_pct = (total_contrib / conf["score"] * 100) if conf["score"] > 0 else 0
 
         items.append(EvidenceProvenanceItem(
@@ -430,6 +440,7 @@ def get_evidence_provenance(variant_id: int, db: Session = Depends(get_db)):
             volume_contrib=round(volume_contrib, 4),
             quality_contrib=round(quality_contrib, 4),
             agreement_contrib=round(agreement_contrib, 4),
+            review_contrib=round(review_contrib, 4),
             total_contrib=round(total_contrib, 4),
             contribution_pct=round(contribution_pct, 2),
         ))
@@ -451,6 +462,33 @@ def get_acmg_classification(variant_id: int, db: Session = Depends(get_db)):
 
     acmg = ACMGService(db)
     return acmg.classify(variant_id)
+
+
+@router.get("/variants/{variant_id}/classification-timeline", response_model=Optional[ClassificationTimelineResponse])
+def get_classification_timeline(variant_id: int, db: Session = Depends(get_db)):
+    variant = db.query(Variant).filter(Variant.id == variant_id).first()
+    if not variant:
+        raise HTTPException(status_code=404, detail="Variant not found")
+
+    gene = db.query(Gene).filter(Gene.id == variant.gene_id).first()
+    label = f"{gene.symbol} {variant.hgvs_c or variant.protein_change or ''}" if gene else str(variant.id)
+
+    history = []
+    if variant.clinvar_data and "classification_history" in variant.clinvar_data:
+        for entry in variant.clinvar_data["classification_history"]:
+            history.append(ClassificationEntry(
+                classification=entry.get("classification", "Unknown"),
+                review_status=entry.get("review_status", "No assertion"),
+                date=entry.get("date", ""),
+            ))
+
+    return ClassificationTimelineResponse(
+        variant_id=variant.id,
+        label=label,
+        current_classification=variant.clinical_significance or "Unknown",
+        current_review_status=variant.review_status or "No assertion",
+        history=history,
+    )
 
 
 @router.get("/variants")

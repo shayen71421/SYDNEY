@@ -51,6 +51,7 @@ class Variant(Base):
     gene = relationship("Gene", back_populates="variants")
     evidence = relationship("Evidence", back_populates="variant")
     reports = relationship("Report", back_populates="variant")
+    why_matters = Column(Text)
 
 
 class Disease(Base):
@@ -120,6 +121,7 @@ class Report(Base):
     disease_associations = Column(JSON)
     mechanism_of_action = Column(Text)
     evidence_overview = Column(Text)
+    clinvar_review_strength = Column(Float, default=0.0)
     confidence_assessment = Column(Text)
     research_gaps = Column(JSON)
     ai_summary = Column(Text)

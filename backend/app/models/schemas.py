@@ -52,6 +52,7 @@ class ReportResponse(BaseModel):
     evidence_volume: int
     evidence_quality: float
     study_agreement: float
+    clinvar_review_strength: float = 0.0
     executive_summary: Optional[str] = None
     clinical_significance: Optional[str] = None
     disease_associations: list[dict] = []
@@ -96,6 +97,7 @@ class CompareVariantData(BaseModel):
     evidence_volume: int = 0
     evidence_quality: float = 0.0
     study_agreement: float = 0.0
+    clinvar_review_strength: float = 0.0
     clinvar_id: Optional[str] = None
     review_status: Optional[str] = None
 
@@ -130,6 +132,7 @@ class EvidenceProvenanceItem(BaseModel):
     volume_contrib: float
     quality_contrib: float
     agreement_contrib: float
+    review_contrib: float = 0.0
     total_contrib: float
     contribution_pct: float
 
@@ -155,6 +158,18 @@ class ACMGClassificationResponse(BaseModel):
     net_score: int
     summary: str
     total_evidence_papers: int
+
+class ClassificationEntry(BaseModel):
+    classification: str
+    review_status: str
+    date: str = ""
+
+class ClassificationTimelineResponse(BaseModel):
+    variant_id: int
+    label: str
+    current_classification: str
+    current_review_status: str
+    history: list[ClassificationEntry] = []
 
 class ErrorResponse(BaseModel):
     detail: str
