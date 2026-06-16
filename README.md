@@ -920,7 +920,7 @@ sydney/
 │   │   │
 │   │   ├── api/
 │   │   │   ├── __init__.py
-│   │   │   └── routes.py              # 15 REST endpoints
+│   │   │   └── routes.py              # 14 REST endpoints
 │   │   │
 │   │   ├── services/
 │   │   │   ├── __init__.py
