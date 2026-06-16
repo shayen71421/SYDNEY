@@ -4,7 +4,8 @@
     "expected": {
       "min_papers": 15,
       "confidence": ["Moderate", "High"],
-      "clinical_significance": "Pathogenic"
+      "clinical_significance": "Pathogenic",
+      "acmg_classification": ["Likely pathogenic", "Pathogenic"]
     }
   },
   {
@@ -12,7 +13,8 @@
     "expected": {
       "min_papers": 15,
       "confidence": ["High"],
-      "clinical_significance": "Pathogenic"
+      "clinical_significance": "Pathogenic",
+      "acmg_classification": ["Likely pathogenic", "Pathogenic"]
     }
   },
   {
@@ -20,7 +22,8 @@
     "expected": {
       "min_papers": 10,
       "confidence": ["Moderate", "High"],
-      "clinical_significance": "Likely benign"
+      "clinical_significance": "Likely benign",
+      "acmg_classification": ["Likely pathogenic", "Pathogenic", "Uncertain significance"]
     }
   },
 
@@ -29,7 +32,8 @@
     "expected": {
       "min_papers": 10,
       "confidence": ["Moderate", "High"],
-      "clinical_significance": "Pathogenic"
+      "clinical_significance": "Pathogenic",
+      "acmg_classification": ["Likely pathogenic", "Pathogenic"]
     }
   },
   {
@@ -37,7 +41,8 @@
     "expected": {
       "min_papers": 10,
       "confidence": ["Moderate", "High"],
-      "clinical_significance": "Pathogenic"
+      "clinical_significance": "Pathogenic",
+      "acmg_classification": ["Likely pathogenic", "Pathogenic"]
     }
   },
   {
@@ -45,7 +50,48 @@
     "expected": {
       "min_papers": 0,
       "confidence": ["Insufficient Evidence"],
-      "clinical_significance": null
+      "clinical_significance": null,
+      "acmg_classification": ["Likely pathogenic", "Pathogenic", "Uncertain significance"]
+    }
+  },
+  {
+    "variant": "CDH1 c.1901C>T",
+    "expected": {
+      "min_papers": 2,
+      "confidence": ["Low", "Moderate"],
+      "clinical_significance": "Pathogenic/Likely pathogenic"
+    }
+  },
+  {
+    "variant": "PALB2 c.1592delT",
+    "expected": {
+      "min_papers": 3,
+      "confidence": ["Moderate", "High"],
+      "clinical_significance": "Pathogenic"
+    }
+  },
+  {
+    "variant": "CHEK2 c.1100delC",
+    "expected": {
+      "min_papers": 5,
+      "confidence": ["Moderate", "High"],
+      "clinical_significance": "Conflicting classifications of pathogenicity"
+    }
+  },
+  {
+    "variant": "ATM c.7271T>G",
+    "expected": {
+      "min_papers": 3,
+      "confidence": ["Moderate", "High"],
+      "clinical_significance": "Pathogenic"
+    }
+  },
+  {
+    "variant": "PTEN c.697C>T",
+    "expected": {
+      "min_papers": 0,
+      "confidence": ["Insufficient Evidence"],
+      "clinical_significance": "Pathogenic/Likely pathogenic"
     }
   }
 ]

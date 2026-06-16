@@ -129,7 +129,7 @@ export default function DashboardPage() {
                 <TrendingUp className="h-5 w-5 text-sydney-600" />
                 <div>
                   <p className="font-medium text-slate-900 dark:text-white">Search New Variant</p>
-                  <p className="text-xs text-slate-500">Analyze a BRCA1, BRCA2, or TP53 variant</p>
+                  <p className="text-xs text-slate-500">Analyze BRCA1, BRCA2, TP53, CDH1, PALB2, CHEK2, ATM, or PTEN variants</p>
                 </div>
               </Link>
               <div className="flex items-center gap-3 rounded-lg border border-slate-200 p-3 text-sm dark:border-slate-700">

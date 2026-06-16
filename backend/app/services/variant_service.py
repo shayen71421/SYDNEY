@@ -14,6 +14,11 @@ class VariantAnalysisService:
         "brca1": "BRCA1", "brca1": "BRCA1",
         "brca2": "BRCA2", "brca2": "BRCA2",
         "tp53": "TP53", "tp53": "TP53", "p53": "TP53",
+        "cdh1": "CDH1", "cdh1": "CDH1",
+        "palb2": "PALB2", "palb2": "PALB2",
+        "chek2": "CHEK2", "chek2": "CHEK2",
+        "atm": "ATM", "atm": "ATM",
+        "pten": "PTEN", "pten": "PTEN",
     }
 
     def __init__(self, db: Session):
@@ -26,13 +31,14 @@ class VariantAnalysisService:
         if not query:
             return None
 
+        gene_alt = "BRCA1|BRCA2|TP53|P53|CDH1|PALB2|CHEK2|ATM|PTEN"
         patterns = [
-            (r"^(BRCA1|BRCA2|TP53|P53)\s+(c\.\d+[A-Za-z_>delinsup*]{1,30})$", None),
-            (r"^(BRCA1|BRCA2|TP53|P53)\s+(p\.[A-Za-z]{1,3}\d+[A-Za-z*]{1,5})$", None),
-            (r"^(BRCA1|BRCA2|TP53|P53)\s+([A-Z][a-z]{2}\d+[A-Za-z*]{1,5})$", None),
-            (r"^(BRCA1|BRCA2|TP53|P53)\s+([A-Z]\d+[A-Z*]{1,3})$", None),
-            (r"^(BRCA1|BRCA2|TP53|P53)\s+(\d+del[A-Z]+)$", None),
-            (r"^(BRCA1|BRCA2|TP53|P53)\s+(\d+ins[A-Z]+)$", None),
+            (rf"^({gene_alt})\s+(c\.\d+[A-Za-z_>delinsup*]{{1,30}})$", None),
+            (rf"^({gene_alt})\s+(p\.[A-Za-z]{{1,3}}\d+[A-Za-z*]{{1,5}})$", None),
+            (rf"^({gene_alt})\s+([A-Z][a-z]{{2}}\d+[A-Za-z*]{{1,5}})$", None),
+            (rf"^({gene_alt})\s+([A-Z]\d+[A-Z*]{{1,3}})$", None),
+            (rf"^({gene_alt})\s+(\d+del[A-Z]+)$", None),
+            (rf"^({gene_alt})\s+(\d+ins[A-Z]+)$", None),
         ]
 
         for pattern, _ in patterns:
@@ -53,6 +59,11 @@ class VariantAnalysisService:
                 "BRCA1": ("BRCA1", "Breast Cancer Gene 1", "17", "Tumor suppressor gene involved in DNA repair"),
                 "BRCA2": ("BRCA2", "Breast Cancer Gene 2", "13", "Tumor suppressor gene involved in DNA repair"),
                 "TP53": ("TP53", "Tumor Protein P53", "17", "Tumor suppressor gene regulating cell cycle"),
+                "CDH1": ("CDH1", "Cadherin 1", "16", "Cell adhesion protein; germline mutations cause hereditary diffuse gastric cancer"),
+                "PALB2": ("PALB2", "Partner And Localizer of BRCA2", "16", "Fanconi anemia group N protein; BRCA2-interacting partner for DNA repair"),
+                "CHEK2": ("CHEK2", "Checkpoint Kinase 2", "22", "Cell cycle checkpoint kinase involved in DNA damage response"),
+                "ATM": ("ATM", "ATM Serine/Threonine Kinase", "11", "DNA damage response kinase; master regulator of double-strand break repair"),
+                "PTEN": ("PTEN", "Phosphatase and Tensin Homolog", "10", "Tumor suppressor phosphatase; negative regulator of PI3K/AKT pathway"),
             }
             info = gene_data.get(symbol.upper(), (symbol.upper(), symbol.upper(), "", ""))
             gene = Gene(symbol=info[0], full_name=info[1], chromosome=info[2], description=info[3])

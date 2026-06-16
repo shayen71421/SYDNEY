@@ -4,7 +4,7 @@
 
 Sydney is a lightweight web application that helps researchers, students, and clinicians understand genetic variants by aggregating evidence from ClinVar, PubMed, and biomedical literature. It generates structured reports with confidence scoring, AI summaries, and research gap analysis — without hallucinating results.
 
-**Current scope:** BRCA1, BRCA2, TP53 variants associated with breast, ovarian, and related cancers.
+**Supported genes (8):** BRCA1, BRCA2, TP53, CDH1, PALB2, CHEK2, ATM, PTEN — covering breast, ovarian, gastric, and related hereditary cancer syndromes.
 
 ---
 
@@ -80,12 +80,13 @@ When a user searches for a variant (e.g., `TP53 R175H`), the following pipeline 
 ```
 User Input: "TP53 R175H"
   ↓
-Regex matching against known patterns:
-  • c. notation:   BRCA1 c.5266dupC
+Regex matching against 8 supported genes and 6 notation patterns:
+  • c. notation:   BRCA1 c.5266dupC, CDH1 c.1901C>T
   • p. notation:   TP53 p.R175H
   • 1-letter code: TP53 R175H
   • 3-letter code: TP53 Arg175His
   • Legacy:        BRCA1 185delAG
+  • Alias:         P53 R175H → TP53
   ↓
 If no match → 400 error with helpful message
 If match → { gene: "TP53", change: "R175H" }
@@ -93,11 +94,9 @@ If match → { gene: "TP53", change: "R175H" }
 
 ### Step 2: Gene Resolution
 ```
-Gene symbol "TP53"
+Gene symbol "TP53" (or CDH1, PALB2, CHEK2, ATM, PTEN, BRCA1, BRCA2)
   ↓
-Query genes table
-  ↓
-If not found → Create gene record with metadata:
+Query genes table → if not found, create with metadata:
   • symbol, full_name, chromosome, description
 ```
 
@@ -149,7 +148,7 @@ gene + variant + disease ("breast cancer")
    • Default → Research Article (0.50)
 5. Cache results as JSON
    ↓
-For each paper:
+For each paper (all 8 genes share the same pipeline — no gene-specific logic needed beyond the symbol):
   • Create Paper record (pmid, title, authors, journal, year, abstract, study_type)
   • Create Evidence record (variant_id, paper_id, evidence_type="literature")
 ```
@@ -324,7 +323,7 @@ The search interface accepts multiple variant notation formats:
 | Legacy | `BRCA1 185delAG` | `gene + \d+del[A-Z]+` |
 | Alias | `P53 R175H` | Auto-normalized to TP53 |
 
-Invalid inputs return a 400 error with a helpful message: `"Could not parse variant. Use format like: BRCA1 c.5266dupC, TP53 R175H, BRCA2 c.5946delT"`
+Invalid inputs return a 400 error with a helpful message: `"Could not parse variant. Use format like: BRCA1 c.5266dupC, TP53 R175H, BRCA2 c.5946delT, CDH1 c.1901C>T, PALB2 c.1592delT"`
 
 Recent searches are stored in localStorage (client-side only) and displayed as clickable badges.
 
@@ -468,7 +467,7 @@ ConfidenceScore = 0.30 × volume_score + 0.40 × quality_score + 0.30 × agreeme
 **Entity Types (color-coded):**
 | Type | Color | Description |
 |------|-------|-------------|
-| Gene | Blue (#3b82f6) | BRCA1, BRCA2, TP53 |
+| Gene | Blue (#3b82f6) | BRCA1, BRCA2, TP53, CDH1, PALB2, CHEK2, ATM, PTEN |
 | Variant | Purple (#8b5cf6) | The specific mutation |
 | Paper | Green (#059669) | PubMed articles |
 | Disease | Amber (#d97706) | Associated conditions |
@@ -533,8 +532,11 @@ http://localhost:8000/api/v1
 | `GET` | `/variants/{id}/report` | Confidence report | None |
 | `POST` | `/variants/{id}/summary` | Generate AI summary (Groq) | None |
 | `GET` | `/variants/{id}/gaps` | Research gap analysis | None |
+| `GET` | `/variants/{id}/evidence-provenance` | Per-paper score contribution breakdown | None |
+| `GET` | `/variants/{id}/acmg` | ACMG/AMP variant classification | None |
 | `GET` | `/variants/{id}/report/pdf` | Download PDF report | None |
 | `GET` | `/graph/{id}` | Knowledge graph data | None |
+| `POST` | `/compare` | Compare two variants side by side | None |
 
 ### Request/Response Examples
 
@@ -560,12 +562,12 @@ http://localhost:8000/api/v1
 
 // Response (400 - invalid)
 {
-  "detail": "Could not parse variant. Use format like: BRCA1 c.5266dupC, TP53 R175H, BRCA2 c.5946delT"
+  "detail": "Could not parse variant. Use format like: BRCA1 c.5266dupC, TP53 R175H, BRCA2 c.5946delT, CDH1 c.1901C>T, PALB2 c.1592delT"
 }
 
 // Response (400 - unsupported gene)
 {
-  "detail": "Could not parse variant. Use format like: BRCA1 c.5266dupC, TP53 R175H, BRCA2 c.5946delT"
+  "detail": "Could not parse variant. Use format like: BRCA1 c.5266dupC, TP53 R175H, BRCA2 c.5946delT, CDH1 c.1901C>T, PALB2 c.1592delT"
 }
 ```
 
@@ -654,6 +656,17 @@ r"^(GENE)\s+(\d+ins[A-Z]+)$"                         # Legacy ins notation
 - Context builder constructs structured text with all paper metadata
 - System prompt explicitly prohibits hallucination
 - Temperature locked at 0.3
+
+### `ACMGService`
+
+**Critical Implementation Details:**
+- `classify(variant_id)` — Evaluates ACMG/AMP 2015 criteria against available variant data
+- Detects null variants (PVS1) via variant_type + HGVS c. + protein_change pattern matching
+- Uses ClinVar significance and review status for PS1, BS1, BP4, PM2
+- Evidence volume thresholds trigger PP4 (≥5 papers) and PS4 (≥10 papers)
+- Missense pathogenic variants trigger PP3
+- Scoring: Very Strong=4, Strong=3, Moderate=2, Supporting=1
+- Returns classification level: Pathogenic / Likely pathogenic / Uncertain significance / Likely benign / Benign
 
 ### `ResearchGapDetector`
 
@@ -748,12 +761,27 @@ TP53 R273H             → Another common TP53 mutation
 TP53 R248Q             → Another common TP53 mutation
 P53 R175H              → Alias (auto-normalized to TP53)
 TP53 R999X             → Nonsense mutation (rare/not in ClinVar)
+
+# CDH1
+CDH1 c.1901C>T         → HGVS coding (missense)
+
+# PALB2
+PALB2 c.1592delT       → HGVS coding (frameshift deletion)
+
+# CHEK2
+CHEK2 c.1100delC       → HGVS coding (frameshift deletion)
+
+# ATM
+ATM c.7271T>G          → HGVS coding (missense)
+
+# PTEN
+PTEN c.697C>T          → HGVS coding (nonsense)
 ```
 
 ### Rejected Inputs (400 Error)
 
 ```
-EGFR T790M              → Unsupported gene
+EGFR T790M              → Unsupported gene (consider contributing)
 KRAS G12D               → Unsupported gene
 ALK F1174L              → Unsupported gene
 hello world             → Not a variant
@@ -784,12 +812,12 @@ pytest ../tests/backend/test_api.py -v
 
 ### Test Coverage
 
-**27 tests covering:**
+**33 tests covering:**
 
 | Test Suite | Tests | What It Tests |
 |------------|-------|---------------|
-| `test_api.py` | 13 | Health, dashboard, search, 404 handling, evidence, report, graph, gaps, OpenAPI |
-| `test_services.py` | 14 | Variant parsing (6), gene lookup (2), evidence scoring (3), confidence engine (2), research gaps (2) |
+| `test_api.py` | 18 | Health, dashboard, search, 404 handling, evidence, report, graph, gaps, OpenAPI, compare, trends, why-matters, full pipeline |
+| `test_services.py` | 15 | Variant parsing (7), gene lookup (2), evidence scoring (3), confidence engine (2), research gaps (1) |
 
 ### Manual QA Test Suite
 
@@ -800,6 +828,8 @@ Run the comprehensive test script:
 for q in "TP53 R175H" "TP53 p.R175H" "P53 R175H" "TP53 Arg175His" \
          "BRCA1 c.5266dupC" "BRCA1 185delAG" \
          "BRCA2 c.5946delT" \
+         "CDH1 c.1901C>T" "PALB2 c.1592delT" "CHEK2 c.1100delC" \
+         "ATM c.7271T>G" "PTEN c.697C>T" \
          "TP53 R999X" "EGFR T790M" "invalid"; do
   echo ">>> $q"
   curl -s -m 15 -X POST http://localhost:8000/api/v1/variants/search \
@@ -816,7 +846,7 @@ Regression test the full retrieval pipeline against known variants.
 
 ### `benchmark.json`
 
-6 test cases with expected results:
+11 test cases across 8 genes with expected results:
 
 | Variant | Min Papers | Expected Confidence | Expected Significance |
 |---------|-----------|-------------------|----------------------|
@@ -826,15 +856,21 @@ Regression test the full retrieval pipeline against known variants.
 | TP53 R248W | ≥10 | Moderate, High | Pathogenic |
 | TP53 R273H | ≥10 | Moderate, High | Pathogenic |
 | TP53 R999X | 0 | Insufficient Evidence | null |
+| CDH1 c.1901C>T | ≥2 | Low, Moderate | Pathogenic/Likely pathogenic |
+| PALB2 c.1592delT | ≥3 | Moderate, High | Pathogenic |
+| CHEK2 c.1100delC | ≥5 | Moderate, High | Conflicting classifications |
+| ATM c.7271T>G | ≥3 | Moderate, High | Pathogenic |
+| PTEN c.697C>T | 0 | Insufficient Evidence | Pathogenic/Likely pathogenic |
 
 ### `benchmark.py`
 
 Runs the full pipeline (ClinVar + PubMed, evidence scoring, confidence engine) against each variant using a fresh SQLite database, validates against expectations, and prints a colored pass/fail report. Exit code is 0 only if all pass.
 
 ```bash
-python benchmark.py                  # run all 6 variants
+python benchmark.py                  # run all 11 variants
 python benchmark.py --variant R175H  # run single variant
 python benchmark.py --verbose        # show every check detail
+python benchmark.py --variant CDH1   # run all CDH1 benchmark variants
 ```
 
 The benchmark uses `sqlite:///./data/benchmark.db` and cleans up after itself.
@@ -897,6 +933,81 @@ Uses Groq (Llama 3.3 70B) with a focused "biomedical educator" prompt to produce
 
 **Frontend:** Inline button inside the Clinical Significance card on the Overview tab. Clicking generates the explanation in-place.
 
+### Evidence Provenance
+
+Click the confidence score in the Overview tab to see exactly how each paper contributes to the total.
+
+**Backend:** `GET /api/v1/variants/{id}/evidence-provenance`
+
+Returns each paper with its contribution breakdown:
+
+| Field | Description |
+|-------|-------------|
+| `evidence_score` | Combined score (0.50×relevance + 0.30×quality + 0.20×recency) |
+| `volume_contrib` | Volume component = 0.30 × volume_score (normalized to the variant's evidence volume tier) |
+| `quality_contrib` | Quality component = 0.40 × study_quality_score |
+| `agreement_contrib` | Agreement component = 0.30 × study_agreement |
+| `total_contrib` | Sum of all three components |
+| `contribution_pct` | `(total_contrib / confidence_score) × 100` — percent of total confidence |
+
+**Frontend:** The Score card in the Confidence Assessment section is clickable. Clicking opens a modal with:
+- Per-paper contribution bars (color-coded by contribution %)
+- Raw scores (relevance, quality, recency, evidence score)
+- Contribution component details (volume ×30%, quality ×40%, agreement ×30%)
+- Direct link to PubMed for each paper
+
+### ACMG/AMP Classification
+
+Automated variant interpretation using ACMG/AMP 2015 guidelines, adapted for the available evidence.
+
+**Backend:** `GET /api/v1/variants/{id}/acmg`
+
+**Implemented Criteria:**
+
+| Code | Strength | Trigger | Points |
+|------|----------|---------|--------|
+| PVS1 | Very Strong | Null variant (frameshift, nonsense, del/ins/dup/* in HGVS or protein change) in a gene where LOF is known mechanism | 4 |
+| PS1 | Strong | Pathogenic in ClinVar with expert panel or multi-submitter review status | 3 |
+| PS4 | Strong | ≥10 supporting publications (well-studied variant) | 3 |
+| PM2 | Moderate | Pathogenic in ClinVar without conflicting submitters | 2 |
+| PM4 | Moderate | In-frame deletion/insertion (not frameshift) | 2 |
+| PP3 | Supporting | Missense variant classified as pathogenic | 1 |
+| PP4 | Supporting | ≥5 supporting publications | 1 |
+| BS1 | Strong | ClinVar benign classification | 3 |
+| BP4 | Supporting | ClinVar likely benign classification | 1 |
+
+**Scoring System:**
+```
+pathogenic_score = sum of pathogenic criteria points
+benign_score = sum of benign criteria points
+net_score = pathogenic_score - benign_score
+
+if net_score > 0:
+    ≥10 → Pathogenic
+    ≥6  → Likely pathogenic
+    else → Uncertain significance
+else:
+    ≥6 benign → Benign
+    ≥2 benign → Likely benign
+    else → Uncertain significance
+```
+
+**Frontend:** "ACMG Classification" tab on the variant detail page showing:
+- Overall classification badge (Pathogenic/Likely pathogenic/Uncertain significance/Likely benign/Benign)
+- Pathogenic, benign, and net score cards
+- Per-criteria breakdown with strength badges (color-coded by evidence level)
+- Description and supporting evidence for each triggered criterion
+- Criteria count
+
+**Example (TP53 R175H):**
+| Criteria | Strength | Evidence |
+|----------|----------|---------|
+| PP3 | Supporting | Missense variant classified as Pathogenic |
+| PP4 | Supporting | Supported by 18 publications |
+| PS4 | Strong | Well-studied variant with 18 publications |
+| PS1 | Strong | ClinVar: Pathogenic, Review: reviewed by expert panel |
+| **Result** | **Likely pathogenic** | **Pathogenic score: 8, Benign score: 0, Net: +8** |
+
 ---
 
 ## Project Structure
@@ -931,6 +1042,7 @@ sydney/
 │   │   │   ├── confidence_engine.py   # Confidence levels (High/Moderate/Low)
 │   │   │   ├── ai_summary.py          # Groq API integration (Llama 3.3 70B)
 │   │   │   ├── research_gaps.py       # Rule-based gap detection
+│   │   │   ├── acmg_service.py        # ACMG/AMP variant classification
 │   │   │   └── report_generator.py    # ReportLab PDF generation
 │   │   │
 │   │   └── db/
@@ -969,7 +1081,9 @@ sydney/
 │   │   │   │   ├── GapsAnalysis.tsx        # Research gaps view
 │   │   │   │   ├── PublicationTrends.tsx   # Recharts year-by-year chart
 │   │   │   │   ├── VariantCompare.tsx      # Side-by-side comparison
-│   │   │   │   └── WhyMatters.tsx          # AI biological explanation
+│   │   │   │   ├── WhyMatters.tsx          # AI biological explanation
+│   │   │   │   ├── EvidenceProvenanceModal.tsx  # Per-paper contribution modal
+│   │   │   │   └── ACMGClassification.tsx       # ACMG/AMP criteria display
 │   │   │   └── layout/
 │   │   │       ├── Header.tsx         # Nav header
 │   │   │       └── ThemeToggle.tsx    # Dark/light mode
@@ -1004,7 +1118,7 @@ sydney/
 ├── .gitignore
 ├── pyproject.toml                     # Pytest config
 ├── run.sh                             # Single-command launcher
-├── benchmark.json                     # 6 benchmark test cases
+├── benchmark.json                     # 11 benchmark test cases (8 genes)
 ├── benchmark.py                       # Regression test runner
 └── README.md
 ```
@@ -1019,11 +1133,15 @@ In `backend/app/services/variant_service.py`, add to the gene metadata dictionar
 
 ```python
 gene_data = {
-    "BRCA1": ("BRCA1", "Breast Cancer Gene 1", "17", "Tumor suppressor..."),
-    "BRCA2": ("BRCA2", "Breast Cancer Gene 2", "13", "Tumor suppressor..."),
-    "TP53":  ("TP53",  "Tumor Protein P53",     "17", "Tumor suppressor..."),
+    "BRCA1": ("BRCA1", "Breast Cancer Gene 1",                              "17", "Tumor suppressor involved in DNA repair"),
+    "BRCA2": ("BRCA2", "Breast Cancer Gene 2",                              "13", "Tumor suppressor involved in DNA repair"),
+    "TP53":  ("TP53",  "Tumor Protein P53",                                 "17", "Tumor suppressor regulating cell cycle"),
+    "CDH1":  ("CDH1",  "Cadherin 1",                                        "16", "Cell adhesion; germline → hereditary diffuse gastric cancer"),
+    "PALB2": ("PALB2", "Partner And Localizer of BRCA2",                    "16", "Fanconi anemia group N; BRCA2-interacting DNA repair"),
+    "CHEK2": ("CHEK2", "Checkpoint Kinase 2",                               "22", "Cell cycle checkpoint kinase; DNA damage response"),
+    "ATM":   ("ATM",   "ATM Serine/Threonine Kinase",                       "11", "DNA damage response kinase; double-strand break repair"),
+    "PTEN":  ("PTEN",  "Phosphatase and Tensin Homolog",                    "10", "Tumor suppressor phosphatase; PI3K/AKT pathway"),
     # Add your new gene here:
-    "CDH1":  ("CDH1",  "Cadherin 1",            "16", "Cell adhesion protein..."),
 }
 ```
 
@@ -1033,8 +1151,13 @@ gene_data = {
 GENE_ALIASES = {
     "brca1": "BRCA1", "brca1": "BRCA1",
     "brca2": "BRCA2", "brca2": "BRCA2",
-    "tp53": "TP53",   "tp53": "TP53", "p53": "TP53",
-    "cdh1": "CDH1",   "cdh1": "CDH1",
+    "tp53":  "TP53",  "tp53": "TP53",  "p53": "TP53",
+    "cdh1":  "CDH1",  "cdh1": "CDH1",
+    "palb2": "PALB2", "palb2": "PALB2",
+    "chek2": "CHEK2", "chek2": "CHEK2",
+    "atm":   "ATM",   "atm": "ATM",
+    "pten":  "PTEN",  "pten": "PTEN",
+    # Add your new gene alias here:
 }
 ```
 
@@ -1043,7 +1166,7 @@ GENE_ALIASES = {
 In `frontend/src/app/page.tsx`, update the validation regex:
 
 ```typescript
-const valid = /^(BRCA1|BRCA2|TP53|P53|CDH1)\s/i.test(trimmed);
+const valid = /^(BRCA1|BRCA2|TP53|P53|CDH1|PALB2|CHEK2|ATM|PTEN)\s/i.test(trimmed);
 ```
 
 ### Step 4: Add Example Suggestions (optional)
@@ -1052,6 +1175,7 @@ In the same file, add clickable examples:
 
 ```typescript
 <span onClick={() => setQuery("CDH1 c.1901C>T")}>CDH1 c.1901C>T</span>
+<span onClick={() => setQuery("PALB2 c.1592delT")}>PALB2 c.1592delT</span>
 ```
 
 **That's it.** The architecture automatically handles:

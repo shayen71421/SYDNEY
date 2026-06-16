@@ -62,7 +62,7 @@ export function VariantCompare({ defaultQuery = "" }: { defaultQuery?: string })
           type="text"
           value={query2}
           onChange={(e) => setQuery2(e.target.value)}
-          placeholder="e.g. TP53 R273H"
+          placeholder="e.g. TP53 R273H, CDH1 c.1901C>T"
           className="flex-1 rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm placeholder:text-slate-400 focus:border-sydney-500 focus:outline-none dark:border-slate-600 dark:bg-slate-800 dark:text-white"
           onKeyDown={(e) => e.key === "Enter" && handleCompare()}
         />

@@ -116,6 +116,46 @@ class PublicationTrendsResponse(BaseModel):
     trends: list[PublicationTrend]
 
 
+class EvidenceProvenanceItem(BaseModel):
+    id: int
+    pmid: str
+    title: str
+    authors: Optional[str] = None
+    year: Optional[int] = None
+    evidence_score: float
+    relevance_score: float
+    study_quality_score: float
+    recency_score: float
+    study_type: Optional[str] = None
+    volume_contrib: float
+    quality_contrib: float
+    agreement_contrib: float
+    total_contrib: float
+    contribution_pct: float
+
+class EvidenceProvenanceResponse(BaseModel):
+    variant_id: int
+    total_papers: int
+    confidence_score: float
+    confidence_level: str
+    papers: list[EvidenceProvenanceItem]
+
+class ACMGCriterion(BaseModel):
+    code: str
+    strength: str
+    description: str
+    evidence: str
+    classification: str
+
+class ACMGClassificationResponse(BaseModel):
+    criteria: list[ACMGCriterion]
+    classification: str
+    pathogenic_score: int
+    benign_score: int
+    net_score: int
+    summary: str
+    total_evidence_papers: int
+
 class ErrorResponse(BaseModel):
     detail: str
     code: Optional[str] = None

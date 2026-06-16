@@ -23,6 +23,7 @@ from app.models.database import engine, Base, Variant, Gene, Evidence, Paper, Re
 from app.services.variant_service import VariantAnalysisService
 from app.services.evidence_scoring import EvidenceScoringService
 from app.services.confidence_engine import ConfidenceEngine
+from app.services.acmg_service import ACMGService
 
 Base.metadata.create_all(bind=engine)
 from sqlalchemy.orm import sessionmaker
@@ -134,6 +135,24 @@ def run_benchmark(variant_filter=None, verbose=False):
                 "status": PASS,
                 "got": f"{confidence['evidence_quality']:.3f}",
             })
+
+            acmg = ACMGService(db)
+            acmg_result = acmg.classify(variant.id)
+            eacmg = expected.get("acmg_classification", None)
+            if eacmg:
+                passed_acmg = acmg_result["classification"] in eacmg if isinstance(eacmg, list) else acmg_result["classification"] == eacmg
+                checks.append({
+                    "check": f"ACMG classification == {eacmg}",
+                    "status": PASS if passed_acmg else FAIL,
+                    "got": acmg_result["classification"],
+                })
+                if not passed_acmg:
+                    case_result["pass"] = False
+                checks.append({
+                    "check": "ACMG criteria count",
+                    "status": PASS,
+                    "got": len(acmg_result["criteria"]),
+                })
 
             case_result["checks"] = checks
             results["checks"] += len(checks)

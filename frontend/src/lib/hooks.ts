@@ -89,3 +89,19 @@ export function useWhyMatters() {
     mutationFn: (id: number) => api.getWhyMatters(id),
   });
 }
+
+export function useEvidenceProvenance(id: number | null) {
+  return useQuery({
+    queryKey: ["evidence-provenance", id],
+    queryFn: () => api.getEvidenceProvenance(id!),
+    enabled: id !== null,
+  });
+}
+
+export function useACMGClassification(id: number | null) {
+  return useQuery({
+    queryKey: ["acmg", id],
+    queryFn: () => api.getACMGClassification(id!),
+    enabled: id !== null,
+  });
+}

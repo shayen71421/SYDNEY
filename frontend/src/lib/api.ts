@@ -10,6 +10,8 @@ import type {
   CompareResponse,
   PublicationTrendsResponse,
   WhyMattersResponse,
+  EvidenceProvenanceResponse,
+  ACMGClassificationResponse,
 } from "@/types";
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
@@ -76,4 +78,10 @@ export const api = {
 
   getWhyMatters: (id: number) =>
     fetchJSON<WhyMattersResponse>(`/api/v1/variants/${id}/why-matters`, { method: "POST" }),
+
+  getEvidenceProvenance: (id: number) =>
+    fetchJSON<EvidenceProvenanceResponse>(`/api/v1/variants/${id}/evidence-provenance`),
+
+  getACMGClassification: (id: number) =>
+    fetchJSON<ACMGClassificationResponse>(`/api/v1/variants/${id}/acmg`),
 };

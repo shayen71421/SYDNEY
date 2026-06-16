@@ -24,17 +24,21 @@ import { EvidenceTable } from "@/components/variant/EvidenceTable";
 import { KnowledgeGraph } from "@/components/variant/KnowledgeGraph";
 import { GapsAnalysis } from "@/components/variant/GapsAnalysis";
 import { ConfidenceBreakdown } from "@/components/variant/ConfidenceBreakdown";
+import { EvidenceProvenanceModal } from "@/components/variant/EvidenceProvenanceModal";
+import { ACMGClassification } from "@/components/variant/ACMGClassification";
 import { PublicationTrends } from "@/components/variant/PublicationTrends";
 import { VariantCompare } from "@/components/variant/VariantCompare";
 import { WhyMatters } from "@/components/variant/WhyMatters";
-import { useVariantDetail, useReport, useAISummary, useEvidence, useGraph, useGaps, usePublicationTrends } from "@/lib/hooks";
+import { useVariantDetail, useReport, useAISummary, useEvidence, useGraph, useGaps, usePublicationTrends, useEvidenceProvenance, useACMGClassification } from "@/lib/hooks";
 import { formatScore, significanceColor, confidenceColor, confidenceBg } from "@/lib/utils";
+import type { ACMGClassificationResponse } from "@/types";
 import { api } from "@/lib/api";
 
 export default function VariantPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = use(params);
   const variantId = parseInt(id);
   const [showAISummary, setShowAISummary] = useState(false);
+  const [showProvenance, setShowProvenance] = useState(false);
 
   const { data: detail, isLoading: detailLoading } = useVariantDetail(variantId);
   const { data: report } = useReport(variantId);
@@ -42,6 +46,8 @@ export default function VariantPage({ params }: { params: Promise<{ id: string }
   const { data: graph } = useGraph(variantId);
   const { data: gaps } = useGaps(variantId);
   const { data: trends } = usePublicationTrends(variantId);
+  const { data: provenance } = useEvidenceProvenance(showProvenance ? variantId : null);
+  const { data: acmg } = useACMGClassification(variantId);
   const summaryMutation = useAISummary();
 
   if (detailLoading) {
@@ -196,12 +202,15 @@ export default function VariantPage({ params }: { params: Promise<{ id: string }
                     </p>
                     <p className="mt-1 text-xs text-slate-500">Confidence</p>
                   </div>
-                  <div className="rounded-lg border border-slate-200 p-3 text-center dark:border-slate-700">
+                  <button
+                    onClick={() => setShowProvenance(true)}
+                    className="rounded-lg border border-slate-200 p-3 text-center transition-colors hover:border-sydney-400 hover:bg-sydney-50 dark:border-slate-700 dark:hover:border-sydney-600 dark:hover:bg-sydney-900/20"
+                  >
                     <p className="text-2xl font-bold text-slate-900 dark:text-white">
                       {formatScore(report.confidence_score)}
                     </p>
-                    <p className="mt-1 text-xs text-slate-500">Score</p>
-                  </div>
+                    <p className="mt-1 text-xs text-slate-500">Score &middot; Click for provenance</p>
+                  </button>
                   <div className="rounded-lg border border-slate-200 p-3 text-center dark:border-slate-700">
                     <p className="text-2xl font-bold text-slate-900 dark:text-white">
                       {report.evidence_volume}
@@ -418,7 +427,28 @@ export default function VariantPage({ params }: { params: Promise<{ id: string }
         </Card>
       ),
     },
+    {
+      id: "acmg",
+      label: "ACMG Classification",
+      content: <ACMGCard acmg={acmg || null} />,
+    },
   ];
+
+  function ACMGCard({ acmg: acmgData }: { acmg: ACMGClassificationResponse | null }) {
+    return (
+      <Card>
+        <CardHeader>
+          <div className="flex items-center gap-2">
+            <AlertTriangle className="h-5 w-5 text-slate-400" />
+            <CardTitle>ACMG/AMP Variant Interpretation</CardTitle>
+          </div>
+        </CardHeader>
+        <CardContent>
+          <ACMGClassification acmg={acmgData} />
+        </CardContent>
+      </Card>
+    );
+  }
 
   return (
     <div>
@@ -440,6 +470,10 @@ export default function VariantPage({ params }: { params: Promise<{ id: string }
       </div>
 
       <Tabs tabs={tabs} />
+
+      {showProvenance && provenance && (
+        <EvidenceProvenanceModal data={provenance} onClose={() => setShowProvenance(false)} />
+      )}
     </div>
   );
 }

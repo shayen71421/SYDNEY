@@ -11,6 +11,8 @@ from app.models.schemas import (
     SearchHistoryResponse, ErrorResponse,
     CompareRequest, CompareResponse, CompareVariantData,
     PublicationTrend, PublicationTrendsResponse,
+    EvidenceProvenanceResponse, EvidenceProvenanceItem,
+    ACMGClassificationResponse, ACMGCriterion,
 )
 from app.services.variant_service import VariantAnalysisService
 from app.services.evidence_scoring import EvidenceScoringService
@@ -18,6 +20,7 @@ from app.services.confidence_engine import ConfidenceEngine
 from app.services.report_generator import PDFReportGenerator
 from app.services.research_gaps import ResearchGapDetector
 from app.services.ai_summary import AISummaryService
+from app.services.acmg_service import ACMGService
 
 router = APIRouter(prefix="/api/v1")
 
@@ -45,7 +48,7 @@ def get_dashboard(db: Session = Depends(get_db)):
         total_papers=db.query(Paper).count(),
         total_genes=db.query(Gene).count(),
         total_diseases=db.query(Disease).count(),
-        recent_searches=["BRCA1 c.5266dupC", "TP53 R175H", "BRCA2 c.5946delT"],
+        recent_searches=["BRCA1 c.5266dupC", "TP53 R175H", "BRCA2 c.5946delT", "CDH1 c.1901C>T", "PALB2 c.1592delT"],
     )
 
 
@@ -57,7 +60,7 @@ def search_variant(req: VariantSearchRequest, db: Session = Depends(get_db)):
     if not result:
         raise HTTPException(
             status_code=400,
-            detail="Could not parse variant. Use format like: BRCA1 c.5266dupC, TP53 R175H, BRCA2 c.5946delT"
+            detail="Could not parse variant. Use format like: BRCA1 c.5266dupC, TP53 R175H, BRCA2 c.5946delT, CDH1 c.1901C>T, PALB2 c.1592delT"
         )
 
     variant = result["variant"]
@@ -387,6 +390,67 @@ def get_why_matters(variant_id: int, db: Session = Depends(get_db)):
         clinvar_data=variant.clinvar_data or {},
     )
     return {"explanation": result}
+
+
+@router.get("/variants/{variant_id}/evidence-provenance", response_model=EvidenceProvenanceResponse)
+def get_evidence_provenance(variant_id: int, db: Session = Depends(get_db)):
+    variant = db.query(Variant).filter(Variant.id == variant_id).first()
+    if not variant:
+        raise HTTPException(status_code=404, detail="Variant not found")
+
+    scoring = EvidenceScoringService(db)
+    scoring.score_evidence_for_variant(variant_id)
+    top_evidence = scoring.get_top_evidence(variant_id, 50)
+
+    engine = ConfidenceEngine(db)
+    conf = engine.calculate_confidence(variant_id)
+
+    items = []
+    for ev in top_evidence:
+        volume_contrib = 0.30 * (1.0 if conf["evidence_volume"] >= 20 else
+                                 0.8 if conf["evidence_volume"] >= 10 else
+                                 0.6 if conf["evidence_volume"] >= 5 else
+                                 0.4 if conf["evidence_volume"] >= 3 else 0.2)
+        quality_contrib = 0.40 * (ev["study_quality_score"] or 0)
+        agreement_contrib = 0.30 * (conf["study_agreement"])
+        total_contrib = volume_contrib + quality_contrib + agreement_contrib
+        contribution_pct = (total_contrib / conf["score"] * 100) if conf["score"] > 0 else 0
+
+        items.append(EvidenceProvenanceItem(
+            id=ev["id"],
+            pmid=ev["pmid"],
+            title=ev["title"],
+            authors=ev.get("authors"),
+            year=ev.get("year"),
+            evidence_score=ev["evidence_score"],
+            relevance_score=ev.get("relevance_score", 0),
+            study_quality_score=ev.get("study_quality_score", 0),
+            recency_score=ev.get("recency_score", 0),
+            study_type=ev.get("study_type"),
+            volume_contrib=round(volume_contrib, 4),
+            quality_contrib=round(quality_contrib, 4),
+            agreement_contrib=round(agreement_contrib, 4),
+            total_contrib=round(total_contrib, 4),
+            contribution_pct=round(contribution_pct, 2),
+        ))
+
+    return EvidenceProvenanceResponse(
+        variant_id=variant_id,
+        total_papers=conf["evidence_volume"],
+        confidence_score=conf["score"],
+        confidence_level=conf["level"],
+        papers=items,
+    )
+
+
+@router.get("/variants/{variant_id}/acmg", response_model=ACMGClassificationResponse)
+def get_acmg_classification(variant_id: int, db: Session = Depends(get_db)):
+    variant = db.query(Variant).filter(Variant.id == variant_id).first()
+    if not variant:
+        raise HTTPException(status_code=404, detail="Variant not found")
+
+    acmg = ACMGService(db)
+    return acmg.classify(variant_id)
 
 
 @router.get("/variants")

@@ -129,3 +129,47 @@ export interface PublicationTrendsResponse {
 export interface WhyMattersResponse {
   explanation: string;
 }
+
+export interface EvidenceProvenanceItem {
+  id: number;
+  pmid: string;
+  title: string;
+  authors: string | null;
+  year: number | null;
+  evidence_score: number;
+  relevance_score: number;
+  study_quality_score: number;
+  recency_score: number;
+  study_type: string | null;
+  volume_contrib: number;
+  quality_contrib: number;
+  agreement_contrib: number;
+  total_contrib: number;
+  contribution_pct: number;
+}
+
+export interface EvidenceProvenanceResponse {
+  variant_id: number;
+  total_papers: number;
+  confidence_score: number;
+  confidence_level: string;
+  papers: EvidenceProvenanceItem[];
+}
+
+export interface ACMGCriterion {
+  code: string;
+  strength: string;
+  description: string;
+  evidence: string;
+  classification: string;
+}
+
+export interface ACMGClassificationResponse {
+  criteria: ACMGCriterion[];
+  classification: string;
+  pathogenic_score: number;
+  benign_score: number;
+  net_score: number;
+  summary: string;
+  total_evidence_papers: number;
+}
