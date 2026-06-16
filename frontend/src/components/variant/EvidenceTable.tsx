@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, Fragment } from "react";
 import { ChevronDown, ChevronUp, ExternalLink } from "lucide-react";
 import type { EvidenceItem } from "@/types";
 import { formatScore } from "@/lib/utils";
@@ -32,9 +32,8 @@ export function EvidenceTable({ evidence }: Props) {
         </thead>
         <tbody className="divide-y divide-slate-200 dark:divide-slate-700">
           {sorted.map((ev) => (
-            <>
+            <Fragment key={ev.id}>
               <tr
-                key={ev.id}
                 className="cursor-pointer hover:bg-slate-50 dark:hover:bg-slate-800/50"
                 onClick={() => setExpanded(expanded === ev.id ? null : ev.id)}
               >
@@ -126,7 +125,7 @@ export function EvidenceTable({ evidence }: Props) {
                   </td>
                 </tr>
               )}
-            </>
+            </Fragment>
           ))}
         </tbody>
       </table>

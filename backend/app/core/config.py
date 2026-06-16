@@ -20,7 +20,12 @@ class Settings(BaseSettings):
     max_pubmed_results: int = 20
     cache_ttl_hours: int = 24
 
-    cors_origins: list[str] = ["http://localhost:3000"]
+    cors_origins: list[str] = [
+        "http://localhost:3000",
+        "http://localhost:3001",
+        "http://127.0.0.1:3000",
+        "http://127.0.0.1:3001",
+    ]
 
     class Config:
         env_file = ".env"
