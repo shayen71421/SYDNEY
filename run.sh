@@ -22,6 +22,13 @@ trap cleanup EXIT INT TERM
 echo "=== Starting Sydney ==="
 
 source "$ROOT/venv/bin/activate"
+
+if [ -f "$ROOT/backend/.env" ]; then
+  set -a
+  source "$ROOT/backend/.env"
+  set +a
+fi
+
 PYTHONPATH="$ROOT/backend" uvicorn app.main:app --host 0.0.0.0 --port 8000 &
 BACKEND_PID=$!
 
