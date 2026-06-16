@@ -1,0 +1,47 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+dist/
+build/
+*.egg
+.venv/
+venv/
+env/
+*.so
+
+# Node
+node_modules/
+.next/
+out/
+*.tsbuildinfo
+.next.bak/
+
+# Environment
+.env
+.env.local
+.env.*.local
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+
+# Database & Data
+data/*.db
+data/*.sqlite
+data/cache/
+
+# Logs
+*.log
+*.log.*
+
+# Docker
+.docker/
+
+# OS
+Thumbs.db
+.DS_Store*
