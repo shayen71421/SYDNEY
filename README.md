@@ -1,93 +1,673 @@
-# Sydney
+# **S**ydney — **S**ystematic **Y**ielding of **D**isease-associated Ge**n**omic **E**vidence and Discover**Y**
 
 **AI-Powered Biomedical Variant Intelligence Platform**
 
-Sydney is a lightweight web application that helps researchers, students, and clinicians understand genetic variants by aggregating evidence from ClinVar, PubMed, and biomedical literature. It generates structured reports with confidence scoring, AI summaries, and research gap analysis.
+Sydney is a lightweight web application that helps researchers, students, and clinicians understand genetic variants by aggregating evidence from ClinVar, PubMed, and biomedical literature. It generates structured reports with confidence scoring, AI summaries, and research gap analysis — without hallucinating results.
 
-**Scope:** BRCA1, BRCA2, TP53 variants associated with breast and ovarian cancer.
+**Current scope:** BRCA1, BRCA2, TP53 variants associated with breast, ovarian, and related cancers.
 
 ---
 
-## Architecture
+## Table of Contents
+
+- [Architecture Overview](#architecture-overview)
+- [Data Pipeline (End to End)](#data-pipeline-end-to-end)
+- [Database Schema](#database-schema)
+- [Features](#features)
+- [API Reference](#api-reference)
+- [Services Deep Dive](#services-deep-dive)
+- [Quick Start](#quick-start)
+- [Variant Format Reference](#variant-format-reference)
+- [Testing Guide](#testing-guide)
+- [Project Structure](#project-structure)
+- [Adding New Genes](#adding-new-genes)
+- [Environment Variables](#environment-variables)
+- [Resource Usage](#resource-usage)
+- [Troubleshooting](#troubleshooting)
+
+---
+
+## Architecture Overview
 
 ```
-┌─────────────┐     ┌──────────────┐     ┌──────────────┐
-│  Next.js 15 │────▶│  FastAPI     │────▶│  SQLite/     │
-│  Frontend   │     │  Backend     │     │  PostgreSQL  │
-│  :3000      │     │  :8000       │     │              │
-└─────────────┘     └──────┬───────┘     └──────────────┘
-                           │
-                    ┌──────┴───────┐
-                    │  External    │
-                    │  APIs        │
-                    │              │
-                    │  • ClinVar   │
-                    │  • PubMed    │
-                    │  • Groq      │
-                    └──────────────┘
+┌─────────────────────────────────────────────────────────────────┐
+│                        Browser                                   │
+│  ┌─────────────────────────────────────────────────────────────┐ │
+│  │  Next.js 15 App Router                                      │ │
+│  │  • React 19 + TypeScript                                    │ │
+│  │  • Tailwind CSS + Dark Mode                                 │ │
+│  │  • React Query (caching, refetch)                           │ │
+│  │  • Recharts (evidence charts)                               │ │
+│  │  • SVG graph (knowledge relationships)                      │ │
+│  └──────────────────────┬──────────────────────────────────────┘ │
+└─────────────────────────┼────────────────────────────────────────┘
+                          │ HTTP (localhost:3000 → localhost:8000)
+                          ▼
+┌─────────────────────────────────────────────────────────────────┐
+│  FastAPI Backend                                                │
+│                                                                  │
+│  ┌─────────────┐    ┌──────────────┐    ┌────────────────────┐  │
+│  │ API Routes   │───▶│ Services     │───▶│ Database           │  │
+│  │ (routes.py)  │    │ (8 services) │    │ (SQLAlchemy/SQLite)│  │
+│  └──────┬───────┘    └──────┬───────┘    └────────────────────┘  │
+│         │                   │                                     │
+│         │                   ├── ClinVar Service ──▶ NCBI E-utilities
+│         │                   ├── PubMed Service  ──▶ NCBI E-utilities
+│         │                   ├── AI Summary      ──▶ Groq API
+│         │                   └── PDF Generator   ──▶ ReportLab
+│         ▼
+│  OpenAPI: /docs
+└─────────────────────────────────────────────────────────────────┘
 ```
 
-### Database Schema
+### Component Responsibilities
+
+| Layer | Technology | Role |
+|-------|-----------|------|
+| **Frontend** | Next.js 15, TypeScript, Tailwind, React Query | Search UI, evidence dashboard, knowledge graph, PDF download |
+| **Backend API** | FastAPI, Pydantic | REST endpoints, input validation, OpenAPI docs |
+| **Business Logic** | Python services | Variant parsing, evidence scoring, confidence calculation |
+| **Database** | SQLite (dev) / PostgreSQL (prod), SQLAlchemy | Variants, papers, evidence, reports |
+| **External APIs** | NCBI E-utilities, Groq | ClinVar queries, PubMed search, AI summary generation |
+
+---
+
+## Data Pipeline (End to End)
+
+When a user searches for a variant (e.g., `TP53 R175H`), the following pipeline executes:
+
+### Step 1: Input Validation (VariantAnalysisService.parse_variant)
+```
+User Input: "TP53 R175H"
+  ↓
+Regex matching against known patterns:
+  • c. notation:   BRCA1 c.5266dupC
+  • p. notation:   TP53 p.R175H
+  • 1-letter code: TP53 R175H
+  • 3-letter code: TP53 Arg175His
+  • Legacy:        BRCA1 185delAG
+  ↓
+If no match → 400 error with helpful message
+If match → { gene: "TP53", change: "R175H" }
+```
+
+### Step 2: Gene Resolution
+```
+Gene symbol "TP53"
+  ↓
+Query genes table
+  ↓
+If not found → Create gene record with metadata:
+  • symbol, full_name, chromosome, description
+```
+
+### Step 3: Variant Lookup/Creation
+```
+gene + change
+  ↓
+Query variants table by HGVS c. or protein change
+  ↓
+If not found → Create variant record:
+  • gene_id, hgvs_c, protein_change, variant_type
+```
+
+### Step 4: ClinVar Retrieval (ClinVarService)
+```
+gene + variant
+  ↓
+1. Check local disk cache (data/cache/clinvar/)
+   ↓ if cache miss:
+2. ESearch: NCBI E-utilities → get ClinVar ID
+   • Query: "TP53[gene] AND R175H[variant] OR R175H[All Fields]"
+   • Fallback: "TP53 R175H"
+3. EFetch: rettype=vcv, retmode=xml
+   • VCV accession (zero-padded to 9 digits): VCV000012374
+4. Parse VCV XML for:
+   • <GermlineClassification> → <Description> → "Pathogenic"
+   • <ReviewStatus> → "reviewed by expert panel"
+   • <VariationArchive VariationName="...">
+   • <TraitSet> → disease names
+5. Cache result as JSON
+   ↓
+Update variant record:
+  • clinical_significance, clinvar_id, review_status, clinvar_data
+```
+
+### Step 5: PubMed Retrieval (PubMedService)
+```
+gene + variant + disease ("breast cancer")
+  ↓
+1. Check local disk cache (data/cache/pubmed/)
+   ↓ if cache miss:
+2. ESearch: "(TP53[Title/Abstract]) AND (R175H[Text Word]) AND (breast cancer[MeSH])"
+   • Limit: 20 results, sorted by relevance
+3. EFetch: Get XML with titles, authors, abstracts
+4. Infer study type from abstract + keywords:
+   • "clinical trial" → Clinical Trial (0.90)
+   • "meta-analysis" → Meta-Analysis (0.95)
+   • "case report" → Case Report (0.35)
+   • Default → Research Article (0.50)
+5. Cache results as JSON
+   ↓
+For each paper:
+  • Create Paper record (pmid, title, authors, journal, year, abstract, study_type)
+  • Create Evidence record (variant_id, paper_id, evidence_type="literature")
+```
+
+### Step 6: Evidence Scoring (EvidenceScoringService)
+```
+For each evidence item:
+  ↓
+relevance = keyword overlap between paper and variant (0.5 - 1.0)
+study_quality = STUDY_QUALITY_MAP[paper.study_type]
+  • Meta-Analysis: 0.95
+  • Clinical Trial: 0.90
+  • Cohort Study:   0.75
+  • Case Report:    0.35
+recency = max(0, 1.0 - (current_year - paper_year) * 0.05)
+  ↓
+evidence_score = (0.50 × relevance) + (0.30 × study_quality) + (0.20 × recency)
+  ↓
+Score range: 0.0 - 1.0 (displayed as 0-100)
+```
+
+### Step 7: Confidence Calculation (ConfidenceEngine)
+```
+All evidence items for variant
+  ↓
+evidence_volume = count of papers
+  • 0 papers → 0.0
+  • 1-2 papers → 0.2
+  • 3-4 papers → 0.4
+  • 5-9 papers → 0.6
+  • 10-19 papers → 0.8
+  • 20+ papers → 1.0
+  ↓
+evidence_quality = average study_quality_score across all papers
+  ↓
+study_agreement = consistency of clinical_significance across papers
+  ↓
+confidence_score = (0.30 × volume) + (0.40 × quality) + (0.30 × agreement)
+  ↓
+Level mapping:
+  score >= 0.70 → High
+  score >= 0.40 → Moderate
+  score < 0.40 → Low
+  score == 0   → Insufficient Evidence
+```
+
+### Step 8: Report Generation
+```
+variant + evidence + confidence
+  ↓
+Create Report record with all scores and metadata
+  ↓
+PDF generation (on demand):
+  • ReportLab → professional scientific PDF
+  • Sections: Executive Summary, Clinical Significance,
+    Evidence Overview, Supporting Studies, Disease Associations,
+    Confidence Assessment
+```
+
+### Step 9: AI Summary (optional, requires Groq API key)
+```
+variant + evidence + confidence
+  ↓
+Build context string with all paper titles, PMIDs, scores, findings
+  ↓
+Groq API call: Llama 3.3 70B
+  • System prompt: evidence-based, no hallucinations, cite PMIDs
+  • Temperature: 0.3 (low creativity, high accuracy)
+  • Generates sections: Executive Summary, Clinical Significance,
+    Disease Associations, Mechanism of Action, Evidence Overview,
+    Confidence Assessment
+```
+
+### Step 10: Research Gap Detection (ResearchGapDetector)
+```
+Analyze evidence distribution
+  ↓
+Rule-based checks:
+  • No clinical trials found?
+  • No functional studies?
+  • Fewer than 3 high-quality papers?
+  • Total papers < 5?
+  • Predominantly case reports?
+  • No recent studies (post-2020)?
+  ↓
+Generate gap list + summary
+  ↓
+Optional AI analysis of research directions
+```
+
+---
+
+## Database Schema
+
+### Entity Relationship
 
 ```
-genes ──┬── variants ──┬── evidence ──┬── papers
-        │              │              │
-        │              │              └── diseases
-        │              │
-        │              └── reports
+┌───────────────┐       ┌──────────────────┐       ┌──────────────────┐
+│     genes     │       │    variants      │       │    evidence      │
+├───────────────┤       ├──────────────────┤       ├──────────────────┤
+│ id (PK)       │──1:N──│ id (PK)          │──1:N──│ id (PK)          │
+│ symbol (UQ)   │       │ gene_id (FK)     │       │ variant_id (FK)  │
+│ full_name     │       │ hgvs_c (idx)     │       │ paper_id (FK)    │
+│ chromosome    │       │ hgvs_p (idx)     │       │ evidence_type    │
+│ description   │       │ protein_change   │       │ relevance_score  │
+│ created_at    │       │ variant_type     │       │ study_quality    │
+└───────────────┘       │ description      │       │ recency_score    │
+        │               │ clin_sig         │       │ evidence_score   │
+        │               │ clinvar_id       │       │ key_findings     │
+        │               │ clinvar_data(J)  │       │ source           │
+        │               │ review_status    │       │ created_at       │
+        │               │ created_at       │       └────────┬─────────┘
+        │               │ updated_at       │                │
+        │               └────────┬─────────┘                │
+        │                        │                          │
+        │               ┌────────┴─────────┐       ┌────────┴─────────┐
+        │               │     reports      │       │     papers       │
+        │               ├──────────────────┤       ├──────────────────┤
+        │               │ id (PK)          │       │ id (PK)          │
+        │               │ variant_id (FK)  │       │ pmid (UQ, idx)   │
+        │               │ confidence_level │       │ title            │
+        │               │ confidence_score │       │ authors          │
+        │               │ evidence_volume  │       │ journal          │
+        │               │ evidence_quality │       │ year             │
+        │               │ study_agreement  │       │ abstract         │
+        │               │ exec_summary     │       │ doi              │
+        │               │ clin_sig         │       │ study_type       │
+        │               │ disease_assoc(J) │       │ keywords (JSON)  │
+        │               │ mechanism        │       │ created_at       │
+        │               │ evidence_overview│       └──────────────────┘
+        │               │ confidence_assess│
+        │               │ research_gaps(J) │
+        │               │ ai_summary       │
+        │               │ report_data (J)  │
+        │               │ created_at       │
+        │               └──────────────────┘
         │
-        └── gene_papers ──┐
-                          ├── disease_papers
-                          └── papers
+        ├─── gene_papers (M:N join) ─── papers
+        │
+        └─── disease_papers (M:N join) ─── papers
+
+  ┌───────────────┐
+  │   diseases    │
+  ├───────────────┤
+  │ id (PK)       │
+  │ name (idx)    │
+  │ mondo_id      │
+  │ description   │
+  │ created_at    │
+  └───────────────┘
+  (J) = JSON column
+  (FK) = Foreign Key
+  (PK) = Primary Key
+  (UQ) = Unique
+  (idx) = Indexed
 ```
 
 ---
 
 ## Features
 
-### 1. Variant Search
-Parse and normalize variant notation (HGVS c., protein change). Supports BRCA1, BRCA2, TP53.
+### 1. Variant Search (Feature 1)
 
-### 2. ClinVar Integration
-Retrieves clinical significance, review status, and disease associations with local caching.
+The search interface accepts multiple variant notation formats:
 
-### 3. PubMed Retrieval
-Searches for relevant papers by gene, variant, and disease. Stores metadata locally. Limits to top relevant results.
+| Format | Example | Pattern |
+|--------|---------|---------|
+| HGVS coding | `BRCA1 c.5266dupC` | `gene + c.` prefix + position + change |
+| HGVS protein | `TP53 p.R175H` | `gene + p.` prefix + amino acid change |
+| 1-letter protein | `TP53 R175H` | `gene + [A-Z]\d+[A-Z*]` |
+| 3-letter protein | `TP53 Arg175His` | `gene + [A-Z][a-z]{2}\d+[A-Za-z*]` |
+| Legacy | `BRCA1 185delAG` | `gene + \d+del[A-Z]+` |
+| Alias | `P53 R175H` | Auto-normalized to TP53 |
 
-### 4. Evidence Scoring
-Each paper scored on a 0-100 scale using:
-- **50%** Relevance score
-- **30%** Study quality (e.g., Meta-Analysis=0.95, Case Report=0.35)
-- **20%** Recency (newer papers score higher)
+Invalid inputs return a 400 error with a helpful message: `"Could not parse variant. Use format like: BRCA1 c.5266dupC, TP53 R175H, BRCA2 c.5946delT"`
 
-### 5. Confidence Engine
-Aggregate confidence level based on:
-- Evidence volume (number of papers)
-- Evidence quality (average study quality)
-- Study agreement (consistency across papers)
+Recent searches are stored in localStorage (client-side only) and displayed as clickable badges.
 
-Outputs: **High**, **Moderate**, **Low**, or **Insufficient Evidence**
+### 2. ClinVar Integration (Feature 3)
 
-### 6. AI Research Summary
-Generates structured summaries using Groq API (Llama 3.3 70B) with:
-- Executive Summary
-- Clinical Significance
-- Disease Associations
-- Mechanism of Action
-- Evidence Overview
-- Confidence Assessment
+**Endpoint:** NCBI E-utilities (`https://eutils.ncbi.nlm.nih.gov/entrez/eutils/`)
 
-### 7. Knowledge Graph
-Lightweight relationship visualization showing connections between genes, variants, papers, and diseases.
+**Flow:**
+1. `esearch.fcgi` — Search for ClinVar records using `gene[variant]` query
+2. `efetch.fcgi?rettype=vcv` — Fetch VCV XML (the modern ClinVar format, not the deprecated `rettype=variation`)
+3. Parse XML for clinical significance, review status, disease names
 
-### 8. Research Gap Detection
-Rule-based analysis identifying poorly studied variants, missing study types, and potential research areas.
+**VCV Accession Format:**
+- Numeric IDs from esearch are zero-padded to 9 digits
+- Example: ID `12374` → `VCV000012374`
+- This is required by NCBI's API
 
-### 9. PDF Report Export
-Professional scientific report generation with ReportLab.
+**Caching:**
+- JSON responses cached to `data/cache/clinvar/`
+- TTL: 24 hours (configurable via `CACHE_TTL_HOURS`)
+- Cache key: `{gene}_{variant}` with special characters sanitized
 
-### 10. Dashboard
-Overview of platform statistics and recent variant analyses.
+**Parsed Fields:**
+| XML Path | Field | Example |
+|----------|-------|---------|
+| `VariationArchive/@VariationName` | description | `NM_000546.6(TP53):c.524G>A (p.Arg175His)` |
+| `VariationArchive/@Accession` | accession | `VCV000012374` |
+| `GermlineClassification/Description` | clinical_significance | `Pathogenic` |
+| `GermlineClassification/ReviewStatus` | review_status | `reviewed by expert panel` |
+| `OncogenicityClassification/Description` | clinical_significance (fallback) | `Oncogenic` |
+| `TraitSet/Trait/Name` | diseases (if non-empty) | `Li-Fraumeni syndrome` |
+
+### 3. PubMed Retrieval (Feature 4)
+
+**Endpoint:** NCBI E-utilities
+
+**Search Query Construction:**
+```
+(gene[Title/Abstract]) AND (variant[Text Word]) AND (breast cancer[MeSH])
+```
+
+**Result Limit:** 20 papers (configurable via `MAX_PUBMED_RESULTS`)
+
+**Parsed Fields:**
+| XML Path | Field |
+|----------|-------|
+| `PMID` | pmid |
+| `ArticleTitle` | title |
+| `Author/LastName` + `ForeName` | authors (first 10) |
+| `Journal/Title` | journal |
+| `PubDate/Year` | year |
+| `AbstractText` | abstract (with Label attributes) |
+| `ELocationId[@EIdType="doi"]` | doi |
+| `Keyword` | keywords array |
+
+**Study Type Inference (Rule-Based):**
+| Keywords in Abstract | Study Type | Quality Score |
+|---------------------|------------|---------------|
+| "clinical trial", "randomized", "phase I/II/III" | Clinical Trial | 0.90 |
+| "meta-analysis", "systematic review" | Meta-Analysis | 0.95 |
+| "case report", "case study" | Case Report | 0.35 |
+| "cohort", "case-control", "longitudinal" | Cohort Study | 0.75 |
+| "review", "overview" | Review | 0.50 |
+| "in vitro", "cell line", "functional study" | Functional Study | 0.70 |
+| "genome-wide", "gwas", "association study" | Genome-Wide Study | 0.80 |
+| None of the above | Research Article | 0.50 |
+
+**Caching:** Same scheme as ClinVar, stored in `data/cache/pubmed/` with 24-hour TTL.
+
+### 4. Evidence Scoring Engine (Feature 6)
+
+**Formula:**
+
+```
+EvidenceScore = 0.50 × relevance + 0.30 × study_quality + 0.20 × recency
+```
+
+**Components:**
+
+| Component | Weight | Calculation |
+|-----------|--------|-------------|
+| Relevance | 50% | Keyword overlap between paper keywords and variant key findings. Baseline: 0.5, bonus: up to +0.5 for keyword matches. Range: 0.5–1.0 |
+| Study Quality | 30% | Mapped from study type (0.35 for Case Report up to 0.95 for Meta-Analysis) |
+| Recency | 20% | `max(0, 1.0 - (current_year - paper_year) × 0.05)`. A paper from 2026 scores 1.0, from 2020 scores 0.7, from 2010 scores 0.2 |
+
+**Score Display:** Scores are multiplied by 100 for the UI (0–100 scale).
+
+### 5. Confidence Engine (Feature 10)
+
+**Formula:**
+
+```
+ConfidenceScore = 0.30 × volume_score + 0.40 × quality_score + 0.30 × agreement_score
+```
+
+**Components:**
+
+| Component | Weight | Calculation |
+|-----------|--------|-------------|
+| Evidence Volume | 30% | Logarithmic scale based on paper count: 0 papers = 0.0, 1-2 = 0.2, 3-4 = 0.4, 5-9 = 0.6, 10-19 = 0.8, 20+ = 1.0 |
+| Evidence Quality | 40% | Average `study_quality_score` across all papers (0.0–1.0) |
+| Study Agreement | 30% | Proportion of papers with the same clinical significance classification (0.0–1.0) |
+
+**Levels:**
+
+| Score Range | Level | Meaning |
+|------------|-------|---------|
+| 0.70–1.00 | High | Well-characterized variant with strong, consistent evidence |
+| 0.40–0.69 | Moderate | Some evidence available, but gaps remain |
+| 0.01–0.39 | Low | Limited evidence, further studies needed |
+| 0.00 | Insufficient Evidence | No supporting papers found; no hallucination |
+
+### 6. AI Research Summary (Feature 9)
+
+**Provider:** Groq API with Llama 3.3 70B (requires `GROQ_API_KEY`)
+
+**Generation:** Triggered via `/api/v1/variants/{id}/summary`
+
+**Prompt Engineering:**
+- System prompt instructs the model to be evidence-based and cite specific PMIDs
+- Context includes all paper titles, PMIDs, years, study types, evidence scores, and key findings
+- Temperature set to 0.3 (minimal creativity, prioritizes accuracy)
+
+**Output Sections:**
+1. Executive Summary
+2. Clinical Significance
+3. Disease Associations
+4. Mechanism of Action
+5. Evidence Overview
+6. Confidence Assessment
+
+**Hallucination Prevention:**
+- Model explicitly instructed: "Only use the provided evidence. Do not hallucinate."
+- No retrieved evidence → model returns "No evidence available for this variant"
+- All claims should reference supporting PMIDs
+
+### 7. Knowledge Relationships View (Feature 8)
+
+**Implementation:** Custom SVG-based graph visualization (no external graph library dependency)
+
+**Entity Types (color-coded):**
+| Type | Color | Description |
+|------|-------|-------------|
+| Gene | Blue (#3b82f6) | BRCA1, BRCA2, TP53 |
+| Variant | Purple (#8b5cf6) | The specific mutation |
+| Paper | Green (#059669) | PubMed articles |
+| Disease | Amber (#d97706) | Associated conditions |
+
+**Relationships:** `has variant`, `evidence`, `associated with`
+
+**Layout:** Force-directed layout with gene at top, variant in center, papers and diseases arranged radially.
+
+**Data Source:** `/api/v1/graph/{variant_id}` endpoint constructs nodes and edges from the database.
+
+### 8. Research Gap Detection (Feature 11)
+
+**Rule-Based Analysis (`ResearchGapDetector.analyze_gaps`):**
+
+| Check | Condition | Gap Message |
+|-------|-----------|-------------|
+| Clinical trials | Count == 0 | "No clinical trials found for this variant" |
+| Functional studies | Count == 0 | "Functional characterization studies are limited" |
+| High-quality studies | Count < 3 | "Only N high-quality studies available (need 3+)" |
+| Total evidence | Count < 5 | "Limited evidence volume (N papers)" |
+| Case report dominance | Case reports > 50% of total | "Evidence is predominantly case reports; larger cohort studies needed" |
+| Recent publications | Post-2020 papers < 2 | "Recent studies (post-2020) are lacking" |
+| All checks pass | None triggered | "Relatively well-studied; further meta-analyses could strengthen evidence" |
+
+**Output:** Gap list + well-studied boolean + summary text + study type distribution.
+
+### 9. PDF Report Export (Feature 12)
+
+**Library:** ReportLab
+
+**Sections:**
+1. **Variant Header** — Gene, HGVS notation, clinical significance, confidence level
+2. **Executive Summary** — AI-generated or evidence overview
+3. **Clinical Significance** — ClinVar data with review status
+4. **Evidence Overview** — Volume, quality, agreement scores
+5. **Supporting Studies** — Top 10 papers with titles, PMIDs, years, scores
+6. **Disease Associations** — Disease names from ClinVar
+7. **Confidence Assessment** — Level + score + detailed breakdown
+
+**Generation:** Synchronous, returns PDF as download (~4KB for average reports).
+
+---
+
+## API Reference
+
+### Base URL
+
+```
+http://localhost:8000/api/v1
+```
+
+### Endpoints
+
+| Method | Path | Description | Auth |
+|--------|------|-------------|------|
+| `GET` | `/health` | Health check | None |
+| `GET` | `/dashboard` | Platform statistics | None |
+| `POST` | `/variants/search` | Search and analyze a variant | None |
+| `GET` | `/variants` | List all variants | None |
+| `GET` | `/variants/{id}` | Variant detail with evidence | None |
+| `GET` | `/variants/{id}/evidence` | Evidence list with scores | None |
+| `GET` | `/variants/{id}/report` | Confidence report | None |
+| `POST` | `/variants/{id}/summary` | Generate AI summary (Groq) | None |
+| `GET` | `/variants/{id}/gaps` | Research gap analysis | None |
+| `GET` | `/variants/{id}/report/pdf` | Download PDF report | None |
+| `GET` | `/graph/{id}` | Knowledge graph data | None |
+
+### Request/Response Examples
+
+**POST /variants/search**
+```json
+// Request
+{ "query": "TP53 R175H" }
+
+// Response (200)
+{
+  "id": 1,
+  "hgvs_c": null,
+  "hgvs_p": null,
+  "protein_change": "R175H",
+  "gene": "TP53",
+  "gene_full_name": "Tumor Protein P53",
+  "variant_type": "snv",
+  "clinical_significance": "Pathogenic",
+  "clinvar_id": "12374",
+  "review_status": "reviewed by expert panel",
+  "diseases": ["Li-Fraumeni syndrome"]
+}
+
+// Response (400 - invalid)
+{
+  "detail": "Could not parse variant. Use format like: BRCA1 c.5266dupC, TP53 R175H, BRCA2 c.5946delT"
+}
+
+// Response (400 - unsupported gene)
+{
+  "detail": "Could not parse variant. Use format like: BRCA1 c.5266dupC, TP53 R175H, BRCA2 c.5946delT"
+}
+```
+
+**GET /variants/{id}/report**
+```json
+{
+  "id": 1,
+  "variant_id": 1,
+  "confidence_level": "High",
+  "confidence_score": 0.76,
+  "evidence_volume": 18,
+  "evidence_quality": 0.55,
+  "study_agreement": 0.89,
+  "executive_summary": "TP53 R175H is a well-characterized pathogenic variant...",
+  "clinical_significance": "Pathogenic",
+  "disease_associations": [{"name": "Li-Fraumeni syndrome"}],
+  "evidence_overview": "Found 18 supporting papers. Average evidence score: 0.55...",
+  "confidence_assessment": "Based on 18 supporting papers; evidence volume score: 0.80...",
+  "research_gaps": [],
+  "ai_summary": "## Executive Summary\nThe TP53 R175H mutation...",
+  "created_at": "2026-06-16T12:00:00"
+}
+```
+
+**Full OpenAPI documentation** at http://localhost:8000/docs (Swagger UI) or http://localhost:8000/redoc (ReDoc).
+
+---
+
+## Services Deep Dive
+
+### `VariantAnalysisService`
+
+The orchestrator — coordinates all other services for a single variant analysis.
+
+**Key Methods:**
+- `parse_variant(query)` → Parses user input using regex patterns
+- `get_or_create_gene(symbol)` → Returns existing gene or creates with metadata
+- `analyze_variant(query)` → Full pipeline: parse → gene → variant → ClinVar → PubMed → evidence
+- `get_variant_detail(variant_id)` → Returns variant + gene + evidence with scores
+
+**Regex Patterns (in priority order):**
+```python
+r"^(GENE)\s+(c\.\d+[A-Za-z_>delinsup*]{1,30})$"     # HGVS c.
+r"^(GENE)\s+(p\.[A-Za-z]{1,3}\d+[A-Za-z*]{1,5})$"   # HGVS p.
+r"^(GENE)\s+([A-Z][a-z]{2}\d+[A-Za-z*]{1,5})$"      # 3-letter protein
+r"^(GENE)\s+([A-Z]\d+[A-Z*]{1,3})$"                 # 1-letter protein
+r"^(GENE)\s+(\d+del[A-Z]+)$"                         # Legacy del notation
+r"^(GENE)\s+(\d+ins[A-Z]+)$"                         # Legacy ins notation
+```
+
+### `ClinVarService`
+
+**Critical Implementation Details:**
+- Uses `rettype=vcv` (not the deprecated `rettype=variation`)
+- VCV IDs must be zero-padded to 9 digits: `str.zfill(9)`
+- XML namespaces are NOT required (VCV XML doesn't use them)
+- Falls back from `gene[variant]` query to `gene variant` plain text query
+- Caches aggressively to avoid hitting NCBI rate limits
+
+### `PubMedService`
+
+**Critical Implementation Details:**
+- Constructs complex query with `[Title/Abstract]`, `[Text Word]`, and `[MeSH Terms]` fields
+- Study type inference is text-based (pattern matching on abstract + keywords)
+- `_infer_study_type` checks keywords in priority order (Clinical Trial → Meta-Analysis → Case Report → ... → Research Article)
+- Caches results with gene+variant+disease as composite key
+
+### `EvidenceScoringService`
+
+**Critical Implementation Details:**
+- `score_evidence_for_variant(variant_id)` — Updates scores for ALL evidence linked to a variant
+- Scores are stored in the database (not computed on-the-fly)
+- Recency calculation: linear decay from current year (2026) backward
+
+### `ConfidenceEngine`
+
+**Critical Implementation Details:**
+- `calculate_confidence(variant_id)` — Pure function, no side effects
+- `generate_report(variant_id)` — Creates Report record if one doesn't exist
+- Study agreement calculated by finding the most common clinical significance across all evidence
+
+### `AISummaryService`
+
+**Critical Implementation Details:**
+- Requires `GROQ_API_KEY` in environment; returns fallback message if not set
+- Context builder constructs structured text with all paper metadata
+- System prompt explicitly prohibits hallucination
+- Temperature locked at 0.3
+
+### `ResearchGapDetector`
+
+**Critical Implementation Details:**
+- `analyze_gaps(variant_id)` — Pure rule-based analysis
+- `compare_variants(gene_symbol)` — Cross-variant comparison for a gene
+- Gap rules designed to be conservative (avoid false positives)
+
+### `PDFReportGenerator`
+
+**Critical Implementation Details:**
+- Uses ReportLab's `platypus` (Platform Independent Page Layout)
+- Custom paragraph styles with Sydney color scheme (#1a365d, #2b6cb0)
+- Returns raw bytes for HTTP response with `Content-Disposition: attachment`
 
 ---
 
@@ -96,21 +676,27 @@ Overview of platform statistics and recent variant analyses.
 ### Prerequisites
 - Python 3.12+
 - Node.js 20+
-- 8GB RAM
+- 8GB RAM (system requirement, app uses ~350MB)
 - Dual-core CPU
+- Internet connection (for NCBI API calls)
 
 ### Backend Setup
 
 ```bash
 cd backend
+
+# Create virtual environment
 python -m venv venv
-source venv/bin/activate
+source venv/bin/activate  # Linux/macOS
+# venv\Scripts\activate   # Windows
+
+# Install dependencies
 pip install -r requirements.txt
 
-# Set your Groq API key (optional, for AI summaries)
-export GROQ_API_KEY=gsk_your_key_here
+# Configure (minimal — works out of box for basic features)
+echo "GROQ_API_KEY=gsk_your_key_here" > .env  # Optional, for AI summaries
 
-# Start the server
+# Run
 uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
 ```
 
@@ -122,7 +708,7 @@ npm install
 npm run dev
 ```
 
-Open http://localhost:3000
+Open **http://localhost:3000**
 
 ### Docker Setup
 
@@ -130,132 +716,328 @@ Open http://localhost:3000
 docker compose up --build
 ```
 
----
+### Single-Command Run
 
-## API Reference
+```bash
+./run.sh
+```
 
-| Endpoint | Method | Description |
-|----------|--------|-------------|
-| `/api/v1/health` | GET | Health check |
-| `/api/v1/dashboard` | GET | Dashboard statistics |
-| `/api/v1/variants/search` | POST | Search and analyze a variant |
-| `/api/v1/variants` | GET | List all variants |
-| `/api/v1/variants/{id}` | GET | Variant detail with evidence |
-| `/api/v1/variants/{id}/evidence` | GET | Evidence list with scores |
-| `/api/v1/variants/{id}/report` | GET | Confidence report |
-| `/api/v1/variants/{id}/summary` | POST | Generate AI summary |
-| `/api/v1/variants/{id}/gaps` | GET | Research gap analysis |
-| `/api/v1/variants/{id}/report/pdf` | GET | Download PDF report |
-| `/api/v1/graph/{id}` | GET | Knowledge graph data |
-
-Full OpenAPI docs at http://localhost:8000/docs
+Starts both backend and frontend, kills existing processes on ports 8000/3000 automatically. Press Ctrl+C to stop both.
 
 ---
 
-## Variant Format Examples
+## Variant Format Reference
+
+### Accepted Inputs
 
 ```
-BRCA1 c.5266dupC
-BRCA2 c.5946delT
-TP53 R175H
-TP53 p.R175H
-BRCA1 185delAG
-P53 R273H
+# BRCA1
+BRCA1 c.5266dupC       → HGVS coding (duplication)
+BRCA1 185delAG         → Legacy notation (deletion)
+BRCA1 5382insC         → Legacy notation (insertion)
+
+# BRCA2
+BRCA2 c.5946delT       → HGVS coding (deletion)
+BRCA2 6174delT         → Legacy notation
+
+# TP53
+TP53 R175H             → Protein change (1-letter code)
+TP53 p.R175H           → Protein change (HGVS p. format)
+TP53 Arg175His         → Protein change (3-letter code)
+TP53 R273H             → Another common TP53 mutation
+TP53 R248Q             → Another common TP53 mutation
+P53 R175H              → Alias (auto-normalized to TP53)
+TP53 R999X             → Nonsense mutation (rare/not in ClinVar)
 ```
+
+### Rejected Inputs (400 Error)
+
+```
+EGFR T790M              → Unsupported gene
+KRAS G12D               → Unsupported gene
+ALK F1174L              → Unsupported gene
+hello world             → Not a variant
+12345                   → Not a variant
+TP53 mutation           → Too vague
+BRCA1 cancer            → Not a variant
+BRCA1'; DROP TABLE...   → SQL injection (rejected)
+<script>alert(1)</script> → XSS (rejected)
+```
+
+---
+
+## Testing Guide
+
+### Backend Tests
+
+```bash
+cd backend
+pytest ../tests/backend -v
+
+# With coverage
+pytest ../tests/backend -v --cov=app
+
+# Specific test file
+pytest ../tests/backend/test_services.py -v
+pytest ../tests/backend/test_api.py -v
+```
+
+### Test Coverage
+
+**27 tests covering:**
+
+| Test Suite | Tests | What It Tests |
+|------------|-------|---------------|
+| `test_api.py` | 13 | Health, dashboard, search, 404 handling, evidence, report, graph, gaps, OpenAPI |
+| `test_services.py` | 14 | Variant parsing (6), gene lookup (2), evidence scoring (3), confidence engine (2), research gaps (2) |
+
+### Manual QA Test Suite
+
+Run the comprehensive test script:
+
+```bash
+# Test all variant formats
+for q in "TP53 R175H" "TP53 p.R175H" "P53 R175H" "TP53 Arg175His" \
+         "BRCA1 c.5266dupC" "BRCA1 185delAG" \
+         "BRCA2 c.5946delT" \
+         "TP53 R999X" "EGFR T790M" "invalid"; do
+  echo ">>> $q"
+  curl -s -m 15 -X POST http://localhost:8000/api/v1/variants/search \
+    -H 'Content-Type: application/json' \
+    -d "{\"query\":\"$q\"}" | python3 -m json.tool 2>/dev/null
+done
+```
+
+---
+
+## Project Structure
+
+```
+sydney/
+│
+├── backend/
+│   ├── app/
+│   │   ├── __init__.py
+│   │   ├── main.py                    # FastAPI entry, CORS, migrations
+│   │   │
+│   │   ├── core/
+│   │   │   ├── __init__.py
+│   │   │   └── config.py              # Pydantic Settings (env vars)
+│   │   │
+│   │   ├── models/
+│   │   │   ├── __init__.py
+│   │   │   ├── database.py            # SQLAlchemy models (8 tables)
+│   │   │   └── schemas.py             # Pydantic API schemas
+│   │   │
+│   │   ├── api/
+│   │   │   ├── __init__.py
+│   │   │   └── routes.py              # 12 REST endpoints
+│   │   │
+│   │   ├── services/
+│   │   │   ├── __init__.py
+│   │   │   ├── variant_service.py     # Variant parsing + pipeline orchestration
+│   │   │   ├── clinvar_service.py     # ClinVar E-utilities + VCV XML parsing
+│   │   │   ├── pubmed_service.py      # PubMed E-utilities + XML parsing
+│   │   │   ├── evidence_scoring.py    # Evidence score formula (0-100)
+│   │   │   ├── confidence_engine.py   # Confidence levels (High/Moderate/Low)
+│   │   │   ├── ai_summary.py          # Groq API integration (Llama 3.3 70B)
+│   │   │   ├── research_gaps.py       # Rule-based gap detection
+│   │   │   └── report_generator.py    # ReportLab PDF generation
+│   │   │
+│   │   └── db/
+│   │       ├── __init__.py
+│   │       └── migrations.py          # Auto-create tables on startup
+│   │
+│   ├── Dockerfile                     # Python 3.12-slim
+│   ├── requirements.txt
+│   └── .env                           # Environment variables (gitignored)
+│
+├── frontend/
+│   ├── src/
+│   │   ├── app/
+│   │   │   ├── layout.tsx             # Root layout with Header
+│   │   │   ├── page.tsx               # Home: variant search
+│   │   │   ├── providers.tsx          # React Query provider
+│   │   │   ├── globals.css            # Tailwind + custom styles
+│   │   │   ├── dashboard/
+│   │   │   │   └── page.tsx           # Dashboard with stats
+│   │   │   └── variants/
+│   │   │       ├── page.tsx           # Variants list
+│   │   │       └── [id]/
+│   │   │           └── page.tsx       # Variant detail (tabs)
+│   │   │
+│   │   ├── components/
+│   │   │   ├── ui/
+│   │   │   │   ├── Badge.tsx          # Status badges
+│   │   │   │   ├── Button.tsx         # Variants + loading state
+│   │   │   │   ├── Card.tsx           # Card container
+│   │   │   │   └── Tabs.tsx           # Tab navigation
+│   │   │   ├── variant/
+│   │   │   │   ├── EvidenceChart.tsx  # Recharts bar chart
+│   │   │   │   ├── EvidenceTable.tsx  # Sortable evidence table
+│   │   │   │   ├── KnowledgeGraph.tsx # SVG relationship graph
+│   │   │   │   └── GapsAnalysis.tsx   # Research gaps view
+│   │   │   └── layout/
+│   │   │       ├── Header.tsx         # Nav header
+│   │   │       └── ThemeToggle.tsx    # Dark/light mode
+│   │   │
+│   │   ├── lib/
+│   │   │   ├── api.ts                 # API client (fetch wrapper)
+│   │   │   ├── hooks.ts               # React Query hooks
+│   │   │   └── utils.ts              # cn(), formatScore(), etc.
+│   │   │
+│   │   └── types/
+│   │       └── index.ts               # TypeScript interfaces
+│   │
+│   ├── Dockerfile                     # Node 20-alpine multi-stage
+│   ├── package.json
+│   ├── tsconfig.json
+│   ├── tailwind.config.ts
+│   ├── postcss.config.js
+│   ├── next.config.js
+│   └── .env.local
+│
+├── tests/
+│   ├── backend/
+│   │   ├── test_api.py                # 13 API integration tests
+│   │   └── test_services.py           # 14 unit tests
+│   └── frontend/
+│
+├── data/                              # Database + cache (gitignored)
+│   └── .gitkeep
+│
+├── docker-compose.yml                 # Backend + Frontend
+├── .dockerignore
+├── .gitignore
+├── pyproject.toml                     # Pytest config
+├── run.sh                             # Single-command launcher
+└── README.md
+```
+
+---
+
+## Adding New Genes
+
+### Step 1: Add Gene Metadata
+
+In `backend/app/services/variant_service.py`, add to the gene metadata dictionary in `get_or_create_gene`:
+
+```python
+gene_data = {
+    "BRCA1": ("BRCA1", "Breast Cancer Gene 1", "17", "Tumor suppressor..."),
+    "BRCA2": ("BRCA2", "Breast Cancer Gene 2", "13", "Tumor suppressor..."),
+    "TP53":  ("TP53",  "Tumor Protein P53",     "17", "Tumor suppressor..."),
+    # Add your new gene here:
+    "CDH1":  ("CDH1",  "Cadherin 1",            "16", "Cell adhesion protein..."),
+}
+```
+
+### Step 2: Add Gene Alias (optional)
+
+```python
+GENE_ALIASES = {
+    "brca1": "BRCA1", "brca1": "BRCA1",
+    "brca2": "BRCA2", "brca2": "BRCA2",
+    "tp53": "TP53",   "tp53": "TP53", "p53": "TP53",
+    "cdh1": "CDH1",   "cdh1": "CDH1",
+}
+```
+
+### Step 3: Update Regex Validation (frontend)
+
+In `frontend/src/app/page.tsx`, update the validation regex:
+
+```typescript
+const valid = /^(BRCA1|BRCA2|TP53|P53|CDH1)\s/i.test(trimmed);
+```
+
+### Step 4: Add Example Suggestions (optional)
+
+In the same file, add clickable examples:
+
+```typescript
+<span onClick={() => setQuery("CDH1 c.1901C>T")}>CDH1 c.1901C>T</span>
+```
+
+**That's it.** The architecture automatically handles:
+- Gene creation in the database
+- ClinVar queries with the new gene symbol
+- PubMed searches with the new gene
+- Evidence scoring and confidence calculation
+- Knowledge graph relationships
 
 ---
 
 ## Environment Variables
 
 ### Backend (`backend/.env`)
-| Variable | Default | Description |
-|----------|---------|-------------|
-| `DATABASE_URL` | `sqlite:///./data/sydney.db` | Database connection string |
-| `GROQ_API_KEY` | `` | Groq API key for AI summaries |
-| `DEBUG` | `true` | Enable debug mode |
+
+| Variable | Default | Required | Description |
+|----------|---------|----------|-------------|
+| `DATABASE_URL` | `sqlite:///./data/sydney.db` | No | Database connection string. Use `postgresql://user:pass@host/db` for PostgreSQL |
+| `GROQ_API_KEY` | `` | No | Groq API key for AI summaries. Without it, the summary feature shows "unavailable" |
+| `DEBUG` | `true` | No | Enable SQLAlchemy echo and FastAPI debug |
 
 ### Frontend (`frontend/.env.local`)
-| Variable | Default | Description |
-|----------|---------|-------------|
-| `NEXT_PUBLIC_API_URL` | `http://localhost:8000` | Backend API URL |
 
----
-
-## Testing
-
-```bash
-# Backend tests
-cd backend
-pytest ../tests/backend -v
-
-# With coverage
-pytest ../tests/backend -v --cov=app
-```
-
----
-
-## Development Guide
-
-### Project Structure
-
-```
-sydney/
-├── backend/
-│   ├── app/
-│   │   ├── main.py              # FastAPI entry point
-│   │   ├── core/config.py       # Configuration
-│   │   ├── models/database.py   # SQLAlchemy models
-│   │   ├── models/schemas.py    # Pydantic schemas
-│   │   ├── api/routes.py        # API routes
-│   │   ├── services/
-│   │   │   ├── variant_service.py    # Variant parsing & analysis
-│   │   │   ├── clinvar_service.py    # ClinVar API integration
-│   │   │   ├── pubmed_service.py     # PubMed API integration
-│   │   │   ├── evidence_scoring.py   # Evidence scoring engine
-│   │   │   ├── confidence_engine.py  # Confidence calculation
-│   │   │   ├── ai_summary.py         # Groq AI summary
-│   │   │   ├── research_gaps.py      # Gap detection
-│   │   │   └── report_generator.py   # PDF generation
-│   │   └── db/migrations.py     # Database migrations
-│   ├── Dockerfile
-│   └── requirements.txt
-├── frontend/
-│   ├── src/
-│   │   ├── app/
-│   │   │   ├── page.tsx         # Home search page
-│   │   │   ├── dashboard/       # Dashboard page
-│   │   │   ├── variants/        # Variants list & detail
-│   │   │   └── providers.tsx    # React Query provider
-│   │   ├── components/
-│   │   │   ├── ui/              # Reusable UI components
-│   │   │   ├── variant/         # Variant-specific components
-│   │   │   └── layout/          # Layout components
-│   │   ├── lib/
-│   │   │   ├── api.ts           # API client
-│   │   │   ├── hooks.ts         # React Query hooks
-│   │   │   └── utils.ts         # Utility functions
-│   │   └── types/index.ts       # TypeScript types
-│   ├── Dockerfile
-│   └── package.json
-├── docker-compose.yml
-└── README.md
-```
-
-### Adding a New Gene
-
-1. Add gene to `GENE_ALIASES` in `backend/app/services/variant_service.py`
-2. Add gene metadata in `get_or_create_gene` method
-3. Add to frontend validation regex in `frontend/src/app/page.tsx`
-4. That's it — the architecture supports extending the gene list
+| Variable | Default | Required | Description |
+|----------|---------|----------|-------------|
+| `NEXT_PUBLIC_API_URL` | `http://localhost:8000` | No | Backend API URL (used by the API client) |
 
 ---
 
 ## Resource Usage
 
-- **RAM:** ~200MB (backend) + ~150MB (frontend) = ~350MB total
-- **CPU:** Minimal usage during idle; spikes during PubMed/ClinVar API calls
-- **Storage:** ~50MB for SQLite database and API caches
-- **Network:** Only external calls to ClinVar, PubMed, and Groq APIs
+| Resource | Usage | Notes |
+|----------|-------|-------|
+| **RAM (backend)** | ~200 MB | Python + SQLAlchemy + httpx |
+| **RAM (frontend)** | ~150 MB | Node.js + Next.js dev server |
+| **RAM (total)** | ~350 MB | Runs comfortably on 8GB systems |
+| **CPU** | < 5% idle | Spikes during API calls (1-3 seconds) |
+| **Storage** | ~50 MB | SQLite database + JSON caches |
+| **Network** | Minimal | Only NCBI E-utilities + optional Groq API |
+
+---
+
+## Troubleshooting
+
+### ClinVar Returns "Unknown"
+
+1. Check internet connectivity (NCBI API required)
+2. Clear cache: `rm -rf data/cache/clinvar/`
+3. Ensure VCV ID format: ID should be zero-padded to 9 digits
+4. Check NCBI E-utilities status (rare downtime)
+
+### PubMed Returns 0 Papers
+
+1. The variant may genuinely have no literature
+2. Try a broader query (the service uses restrictive field tags)
+3. Clear cache: `rm -rf data/cache/pubmed/`
+
+### AI Summary Not Working
+
+1. Verify `GROQ_API_KEY` is set in `.env`
+2. Check Groq API status
+3. The service returns a message if key is missing
+
+### Port Already in Use
+
+The `run.sh` script automatically kills processes on ports 8000 and 3000 before starting. If running manually:
+
+```bash
+kill $(lsof -ti:8000) 2>/dev/null
+kill $(lsof -ti:3000) 2>/dev/null
+```
+
+### Database Errors
+
+Delete the SQLite database to reset:
+
+```bash
+rm -f data/sydney.db
+```
+
+The database is automatically recreated with all tables on next startup.
 
 ---
 
