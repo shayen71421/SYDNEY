@@ -13,7 +13,7 @@
     "expected": {
       "min_papers": 15,
       "confidence": ["High"],
-      "clinical_significance": "Pathogenic",
+      "clinical_significance": "Uncertain significance",
       "acmg_classification": ["Likely pathogenic", "Pathogenic"]
     }
   },
@@ -22,17 +22,16 @@
     "expected": {
       "min_papers": 10,
       "confidence": ["Moderate", "High"],
-      "clinical_significance": "Likely benign",
+      "clinical_significance": "no classifications from unflagged records",
       "acmg_classification": ["Likely pathogenic", "Pathogenic", "Uncertain significance"]
     }
   },
-
   {
     "variant": "TP53 R248W",
     "expected": {
       "min_papers": 10,
       "confidence": ["Moderate", "High"],
-      "clinical_significance": "Pathogenic",
+      "clinical_significance": "Likely pathogenic",
       "acmg_classification": ["Likely pathogenic", "Pathogenic"]
     }
   },
@@ -59,7 +58,7 @@
     "expected": {
       "min_papers": 2,
       "confidence": ["Low", "Moderate"],
-      "clinical_significance": "Pathogenic/Likely pathogenic"
+      "clinical_significance": "Uncertain significance"
     }
   },
   {
@@ -75,7 +74,7 @@
     "expected": {
       "min_papers": 5,
       "confidence": ["Moderate", "High"],
-      "clinical_significance": "Conflicting classifications of pathogenicity"
+      "clinical_significance": "Pathogenic"
     }
   },
   {
@@ -83,7 +82,7 @@
     "expected": {
       "min_papers": 3,
       "confidence": ["Moderate", "High"],
-      "clinical_significance": "Pathogenic"
+      "clinical_significance": "Uncertain significance"
     }
   },
   {

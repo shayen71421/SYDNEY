@@ -19,6 +19,12 @@ class VariantAnalysisService:
         "chek2": "CHEK2", "chek2": "CHEK2",
         "atm": "ATM", "atm": "ATM",
         "pten": "PTEN", "pten": "PTEN",
+        "egfr": "EGFR", "egfr": "EGFR",
+        "kras": "KRAS", "kras": "KRAS",
+        "alk": "ALK", "alk": "ALK",
+        "braf": "BRAF", "braf": "BRAF",
+        "mlh1": "MLH1", "mlh1": "MLH1",
+        "msh2": "MSH2", "msh2": "MSH2",
     }
 
     def __init__(self, db: Session):
@@ -31,7 +37,7 @@ class VariantAnalysisService:
         if not query:
             return None
 
-        gene_alt = "BRCA1|BRCA2|TP53|P53|CDH1|PALB2|CHEK2|ATM|PTEN"
+        gene_alt = "BRCA1|BRCA2|TP53|P53|CDH1|PALB2|CHEK2|ATM|PTEN|EGFR|KRAS|ALK|BRAF|MLH1|MSH2"
         patterns = [
             (rf"^({gene_alt})\s+(c\.\d+[A-Za-z_>delinsup*]{{1,30}})$", None),
             (rf"^({gene_alt})\s+(p\.[A-Za-z]{{1,3}}\d+[A-Za-z*]{{1,5}})$", None),
@@ -64,6 +70,12 @@ class VariantAnalysisService:
                 "CHEK2": ("CHEK2", "Checkpoint Kinase 2", "22", "Cell cycle checkpoint kinase involved in DNA damage response"),
                 "ATM": ("ATM", "ATM Serine/Threonine Kinase", "11", "DNA damage response kinase; master regulator of double-strand break repair"),
                 "PTEN": ("PTEN", "Phosphatase and Tensin Homolog", "10", "Tumor suppressor phosphatase; negative regulator of PI3K/AKT pathway"),
+                "EGFR": ("EGFR", "Epidermal Growth Factor Receptor", "7", "Receptor tyrosine kinase; driver mutations in lung cancer and glioblastoma"),
+                "KRAS": ("KRAS", "KRAS Proto-Oncogene GTPase", "12", "Small GTPase; key mediator of MAPK signaling; frequently mutated in pancreatic, colorectal, and lung cancers"),
+                "ALK": ("ALK", "ALK Receptor Tyrosine Kinase", "2", "Receptor tyrosine kinase; gene fusions drive lung cancer tumorigenesis"),
+                "BRAF": ("BRAF", "B-Raf Proto-Oncogene Serine/Threonine Kinase", "7", "Serine/threonine kinase in MAPK pathway; V600E mutation is a common oncogenic driver"),
+                "MLH1": ("MLH1", "MutL Homolog 1", "3", "DNA mismatch repair protein; germline mutations cause Lynch syndrome"),
+                "MSH2": ("MSH2", "MutS Homolog 2", "2", "DNA mismatch repair protein; germline mutations cause Lynch syndrome"),
             }
             info = gene_data.get(symbol.upper(), (symbol.upper(), symbol.upper(), "", ""))
             gene = Gene(symbol=info[0], full_name=info[1], chromosome=info[2], description=info[3])

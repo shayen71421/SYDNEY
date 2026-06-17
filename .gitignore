@@ -34,6 +34,7 @@ out/
 data/*.db
 data/*.sqlite
 data/cache/
+backend/data/
 
 # Logs
 *.log

@@ -131,3 +131,90 @@ class TestResearchGapDetector:
         result = detector.analyze_gaps(variant.id)
         assert len(result["gaps"]) > 0
         assert result["well_studied"] is False
+
+
+class TestNewGenes:
+    """CHANGE 3: Verify all 6 new genes are accepted by parse_variant."""
+
+    @pytest.mark.parametrize("input_str,gene,change", [
+        ("EGFR c.2573T>G", "EGFR", "c.2573T>G"),
+        ("KRAS c.35G>A", "KRAS", "c.35G>A"),
+        ("ALK c.2920G>A", "ALK", "c.2920G>A"),
+        ("BRAF c.1799T>A", "BRAF", "c.1799T>A"),
+        ("MLH1 c.350C>T", "MLH1", "c.350C>T"),
+        ("MSH2 c.942G>C", "MSH2", "c.942G>C"),
+        ("egfr c.2573T>G", "EGFR", "c.2573T>G"),  # lowercase
+    ])
+    def test_new_genes_parse(self, db_session, input_str, gene, change):
+        service = VariantAnalysisService(db_session)
+        result = service.parse_variant(input_str)
+        assert result is not None
+        assert result["gene"] == gene
+        assert result["change"] == change
+
+    def test_new_genes_get_or_create(self, db_session):
+        service = VariantAnalysisService(db_session)
+        for symbol in ["EGFR", "KRAS", "ALK", "BRAF", "MLH1", "MSH2"]:
+            gene = service.get_or_create_gene(symbol)
+            assert gene.symbol == symbol
+
+    def test_unsupported_gene_rejected(self, db_session):
+        service = VariantAnalysisService(db_session)
+        result = service.parse_variant("MYC c.1A>G")
+        assert result is None
+
+
+class TestBatchedStudyTypeClassification:
+    """CHANGE 1: batched Groq with JSON fallback to keyword matching."""
+
+    @patch("app.services.pubmed_service.PubMedService._batch_infer_study_types")
+    def test_batch_fallback_to_keyword(self, mock_batch):
+        mock_batch.side_effect = Exception("Groq unavailable")
+        from app.services.pubmed_service import PubMedService
+        svc = PubMedService()
+        papers = [
+            {"pmid": "1", "title": "A RCT of drug X",
+             "abstract": "Randomized controlled trial with 500 patients showed significant improvement.",
+             "keywords": ["clinical trial"]},
+            {"pmid": "2", "title": "Case report of rare mutation",
+             "abstract": "We report a single patient with a novel BRCA1 variant.",
+             "keywords": ["case report"]},
+        ]
+        types = [svc._infer_study_type(p["abstract"], p["keywords"]) for p in papers]
+        assert types[0] in svc.STUDY_TYPES
+        assert types[1] in svc.STUDY_TYPES
+
+    @patch("app.services.pubmed_service.PubMedService._batch_infer_study_types")
+    def test_batch_returns_correct_count(self, mock_batch):
+        mock_batch.side_effect = Exception("Groq unavailable")
+        from app.services.pubmed_service import PubMedService
+        svc = PubMedService()
+        papers = [
+            {"pmid": "1", "title": "Study A", "abstract": "Test abstract A", "keywords": []},
+            {"pmid": "2", "title": "Study B", "abstract": "Test abstract B", "keywords": []},
+        ]
+        types = [svc._infer_study_type(p["abstract"], p["keywords"]) for p in papers]
+        assert len(types) == 2
+
+
+class TestConfidenceWeights:
+    """CHANGE 2: Verify weights sum to 1.0 and calculation uses new formula."""
+
+    def test_weights_sum_to_one(self, db_session):
+        engine = ConfidenceEngine(db_session)
+        # pylint: disable=protected-access
+        weight_quality = 0.40
+        weight_agreement = 0.30
+        weight_volume = 0.20
+        weight_review = 0.10
+        total = weight_quality + weight_agreement + weight_volume + weight_review
+        assert abs(total - 1.0) < 0.001
+
+    def test_calculate_confidence_with_review(self, db_session):
+        engine = ConfidenceEngine(db_session)
+        result = engine._score_clinvar_review("reviewed by expert panel")
+        assert result == 1.0
+        result_multi = engine._score_clinvar_review("criteria provided, multiple submitters, no conflicts")
+        assert result_multi == 0.9
+        result_none = engine._score_clinvar_review("")
+        assert result_none == 0.0

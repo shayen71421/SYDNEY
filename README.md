@@ -141,11 +141,11 @@ gene + variant + disease ("breast cancer")
 2. ESearch: "(TP53[Title/Abstract]) AND (R175H[Text Word]) AND (breast cancer[MeSH])"
    • Limit: 20 results, sorted by relevance
 3. EFetch: Get XML with titles, authors, abstracts
-4. Infer study type from abstract + keywords:
-   • "clinical trial" → Clinical Trial (0.90)
-   • "meta-analysis" → Meta-Analysis (0.95)
-   • "case report" → Case Report (0.35)
-   • Default → Research Article (0.50)
+4. Infer study type via batched Groq call (all papers in one prompt):
+   • Sends title + abstract for each paper, requests JSON array of study types
+   • On success: classifies each paper accordingly
+   • On failure (Groq unavailable, JSON parse error, array length mismatch):
+     → Falls back entire batch to keyword-based matching (see table below)
 5. Cache results as JSON
    ↓
 For each paper (all 8 genes share the same pipeline — no gene-specific logic needed beyond the symbol):
@@ -379,7 +379,9 @@ Recent searches are stored in localStorage (client-side only) and displayed as c
 | `ELocationId[@EIdType="doi"]` | doi |
 | `Keyword` | keywords array |
 
-**Study Type Inference (Rule-Based):**
+**Study Type Inference:** Papers are classified in a single batched Groq call (Llama 3.3 70B, temperature 0.1). The prompt sends each paper's title and abstract, requesting a JSON array of study types. If Groq is unavailable, the response is not valid JSON, or the array length doesn't match the paper count, the **entire batch falls back** to keyword-based matching:
+
+**Fallback Keyword Mapping:**
 | Keywords in Abstract | Study Type | Quality Score |
 |---------------------|------------|---------------|
 | "clinical trial", "randomized", "phase I/II/III" | Clinical Trial | 0.90 |
@@ -634,7 +636,9 @@ r"^(GENE)\s+(\d+ins[A-Z]+)$"                         # Legacy ins notation
 
 **Critical Implementation Details:**
 - Constructs complex query with `[Title/Abstract]`, `[Text Word]`, and `[MeSH Terms]` fields
-- Study type inference is text-based (pattern matching on abstract + keywords)
+- Study type inference uses a **batched Groq call** (all papers classified in one prompt); falls back to keyword pattern matching if Groq unavailable
+- `_batch_infer_study_types` sends title + abstract per paper, parses JSON array response, validates length matches paper count
+- On failure (Groq error, unparseable JSON, length mismatch): falls back **entire batch** to `_infer_study_type` keyword matching — never silently drops papers
 - `_infer_study_type` checks keywords in priority order (Clinical Trial → Meta-Analysis → Case Report → ... → Research Article)
 - Caches results with gene+variant+disease as composite key
 

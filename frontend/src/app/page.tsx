@@ -27,9 +27,9 @@ export default function HomePage() {
       return;
     }
 
-    const valid = /^(BRCA1|BRCA2|TP53|P53|CDH1|PALB2|CHEK2|ATM|PTEN)\s/i.test(trimmed);
+    const valid = /^(BRCA1|BRCA2|TP53|P53|CDH1|PALB2|CHEK2|ATM|PTEN|EGFR|KRAS|ALK|BRAF|MLH1|MSH2)\s/i.test(trimmed);
     if (!valid) {
-      setError("Format: gene + variant. Example: BRCA1 c.5266dupC, CDH1 c.1901C>T");
+      setError("Format: gene + variant. Examples: BRCA1 c.5266dupC, EGFR c.2573T>G, BRAF c.1799T>A");
       return;
     }
 
@@ -71,7 +71,7 @@ export default function HomePage() {
               setError("");
             }}
             onKeyDown={(e) => e.key === "Enter" && handleSearch()}
-            placeholder="Enter a variant... e.g. BRCA1 c.5266dupC, TP53 R175H, CDH1 c.1901C>T"
+            placeholder="Enter a variant... e.g. BRCA1 c.5266dupC, TP53 R175H, EGFR c.2573T>G, BRAF c.1799T>A"
             className="w-full rounded-lg border border-slate-300 bg-white py-3 pl-10 pr-4 text-sm shadow-sm placeholder:text-slate-400 focus:border-sydney-500 focus:outline-none focus:ring-2 focus:ring-sydney-500/20 dark:border-slate-600 dark:bg-slate-800 dark:text-white dark:placeholder:text-slate-500"
           />
         </div>
@@ -116,6 +116,18 @@ export default function HomePage() {
           onClick={() => setQuery("BRCA2 c.5946delT")}
         >
           BRCA2 c.5946delT
+        </span>
+        <span
+          className="cursor-pointer text-xs text-slate-400 underline hover:text-slate-600"
+          onClick={() => setQuery("EGFR c.2573T>G")}
+        >
+          EGFR c.2573T&gt;G
+        </span>
+        <span
+          className="cursor-pointer text-xs text-slate-400 underline hover:text-slate-600"
+          onClick={() => setQuery("BRAF c.1799T>A")}
+        >
+          BRAF c.1799T&gt;A
         </span>
         <span
           className="cursor-pointer text-xs text-slate-400 underline hover:text-slate-600"

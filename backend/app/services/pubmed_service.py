@@ -2,18 +2,25 @@ import httpx
 import xml.etree.ElementTree as ET
 import json
 import time
+import re as regex
 from typing import Optional
 from pathlib import Path
+from groq import Groq
 
 from app.core.config import settings
 
 
 class PubMedService:
     CACHE_DIR = Path("data/cache/pubmed")
+    STUDY_TYPES = [
+        "Clinical Trial", "Meta-Analysis", "Cohort Study", "Case Report",
+        "Functional Study", "Genome-Wide Study", "Review", "Research Article",
+    ]
 
     def __init__(self):
         self.CACHE_DIR.mkdir(parents=True, exist_ok=True)
         self.base_url = settings.pubmed_base_url
+        self.groq = Groq(api_key=settings.groq_api_key) if settings.groq_api_key else None
 
     def _cache_path(self, key: str) -> Path:
         safe = key.replace("/", "_").replace(" ", "_").replace(".", "_")
@@ -84,7 +91,7 @@ class PubMedService:
             return []
 
     def _parse_pubmed_xml(self, xml_text: str) -> list[dict]:
-        papers = []
+        raw = []
         try:
             root = ET.fromstring(xml_text)
             for article in root.findall(".//PubmedArticle"):
@@ -125,7 +132,7 @@ class PubMedService:
                         if kw.text:
                             keywords.append(kw.text)
 
-                    papers.append({
+                    raw.append({
                         "pmid": pmid,
                         "title": title,
                         "authors": "; ".join(authors[:10]),
@@ -134,15 +141,58 @@ class PubMedService:
                         "abstract": abstract,
                         "doi": doi,
                         "keywords": keywords,
-                        "study_type": self._infer_study_type(abstract, keywords),
                     })
                 except Exception:
                     continue
-
         except ET.ParseError:
             pass
 
-        return papers
+        if not raw:
+            return []
+
+        batched = self._batch_infer_study_types(raw)
+        for i, paper in enumerate(raw):
+            paper["study_type"] = batched[i] if i < len(batched) else self._infer_study_type(paper["abstract"], paper["keywords"])
+
+        return raw
+
+    def _batch_infer_study_types(self, papers: list[dict]) -> list[str]:
+        if not self.groq or not papers:
+            return [self._infer_study_type(p["abstract"], p["keywords"]) for p in papers]
+
+        lines = []
+        for i, p in enumerate(papers):
+            title = (p.get("title") or "")[:200]
+            abstract = (p.get("abstract") or "")[:500]
+            lines.append(f"[{i}] Title: {title}\n    Abstract: {abstract}")
+
+        prompt = (
+            "Classify each paper below into one of these study types:\n"
+            + ", ".join(self.STUDY_TYPES)
+            + "\n\nReturn ONLY a valid JSON array of strings where the index matches the paper number. "
+            "No explanation, no markdown, no extra text.\n\n"
+            + "\n\n".join(lines)
+        )
+
+        try:
+            resp = self.groq.chat.completions.create(
+                model=settings.groq_model,
+                messages=[
+                    {"role": "system", "content": "You are a biomedical research classifier. Return only valid JSON arrays."},
+                    {"role": "user", "content": prompt},
+                ],
+                temperature=0.1,
+                max_tokens=1000,
+            )
+            content = resp.choices[0].message.content.strip()
+            content = regex.sub(r"^```(?:json)?\s*|\s*```$", "", content)
+            types = json.loads(content)
+            if isinstance(types, list) and len(types) == len(papers):
+                return [t if t in self.STUDY_TYPES else self._infer_study_type(papers[i]["abstract"], papers[i]["keywords"]) for i, t in enumerate(types)]
+        except Exception:
+            pass
+
+        return [self._infer_study_type(p["abstract"], p["keywords"]) for p in papers]
 
     def _infer_study_type(self, abstract: str, keywords: list[str]) -> str:
         text = (abstract + " " + " ".join(keywords)).lower()
