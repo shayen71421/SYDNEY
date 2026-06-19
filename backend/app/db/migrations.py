@@ -15,6 +15,8 @@ def _add_missing_columns():
         if dialect == "sqlite":
             _add_column_sqlite(conn, "reports", "clinvar_review_strength", "FLOAT DEFAULT 0.0")
             _add_column_sqlite(conn, "variants", "why_matters", "TEXT")
+            _add_column_sqlite(conn, "variants", "gnomad_af", "FLOAT")
+            _add_column_sqlite(conn, "variants", "gnomad_data", "JSON")
 
 
 def _add_column_sqlite(conn, table: str, column: str, col_type: str):

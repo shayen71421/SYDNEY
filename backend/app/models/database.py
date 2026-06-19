@@ -52,6 +52,8 @@ class Variant(Base):
     evidence = relationship("Evidence", back_populates="variant")
     reports = relationship("Report", back_populates="variant")
     why_matters = Column(Text)
+    gnomad_af = Column(Float, nullable=True)
+    gnomad_data = Column(JSON, nullable=True)
 
 
 class Disease(Base):

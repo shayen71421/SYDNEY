@@ -14,6 +14,7 @@ from app.models.schemas import (
     EvidenceProvenanceResponse, EvidenceProvenanceItem,
     ACMGClassificationResponse, ACMGCriterion,
     ClassificationTimelineResponse, ClassificationEntry,
+    GnomadResponse,
 )
 from app.services.variant_service import VariantAnalysisService
 from app.services.evidence_scoring import EvidenceScoringService
@@ -22,6 +23,7 @@ from app.services.report_generator import PDFReportGenerator
 from app.services.research_gaps import ResearchGapDetector
 from app.services.ai_summary import AISummaryService
 from app.services.acmg_service import ACMGService
+from app.services.gnomad_service import GnomadService
 
 router = APIRouter(prefix="/api/v1")
 
@@ -78,6 +80,7 @@ def search_variant(req: VariantSearchRequest, db: Session = Depends(get_db)):
         clinical_significance=variant.clinical_significance,
         clinvar_id=variant.clinvar_id,
         review_status=variant.review_status,
+        gnomad_af=variant.gnomad_af,
     )
 
 
@@ -111,8 +114,10 @@ def get_variant_detail(variant_id: int, db: Session = Depends(get_db)):
         clinical_significance=variant.clinical_significance,
         clinvar_id=variant.clinvar_id,
         review_status=variant.review_status,
+        gnomad_af=variant.gnomad_af,
         description=variant.description,
         clinvar_data=variant.clinvar_data,
+        gnomad_data=variant.gnomad_data,
         diseases=diseases,
         evidence=top_evidence,
     )
@@ -462,6 +467,26 @@ def get_acmg_classification(variant_id: int, db: Session = Depends(get_db)):
 
     acmg = ACMGService(db)
     return acmg.classify(variant_id)
+
+
+@router.get("/variants/{variant_id}/gnomad", response_model=Optional[GnomadResponse])
+def get_gnomad_data(variant_id: int, db: Session = Depends(get_db)):
+    variant = db.query(Variant).filter(Variant.id == variant_id).first()
+    if not variant:
+        raise HTTPException(status_code=404, detail="Variant not found")
+
+    if not variant.gnomad_data:
+        return GnomadResponse(variant_id=variant_id)
+
+    return GnomadResponse(
+        variant_id=variant_id,
+        allele_frequency=variant.gnomad_data.get("allele_frequency"),
+        allele_count=variant.gnomad_data.get("allele_count"),
+        allele_number=variant.gnomad_data.get("allele_number"),
+        homozygote_count=variant.gnomad_data.get("homozygote_count"),
+        population_frequencies=variant.gnomad_data.get("population_frequencies", {}),
+        gnomad_variant_id=variant.gnomad_data.get("gnomad_variant_id"),
+    )
 
 
 @router.get("/variants/{variant_id}/classification-timeline", response_model=Optional[ClassificationTimelineResponse])

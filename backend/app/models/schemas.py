@@ -18,6 +18,7 @@ class VariantSearchResponse(BaseModel):
     clinical_significance: Optional[str] = None
     clinvar_id: Optional[str] = None
     review_status: Optional[str] = None
+    gnomad_af: Optional[float] = None
     diseases: list[str] = []
 
 
@@ -26,6 +27,17 @@ class VariantDetailResponse(VariantSearchResponse):
     clinvar_data: Optional[dict] = None
     evidence: list[dict] = []
     report: Optional[dict] = None
+    gnomad_data: Optional[dict] = None
+
+
+class GnomadResponse(BaseModel):
+    variant_id: int
+    allele_frequency: Optional[float] = None
+    allele_count: Optional[int] = None
+    allele_number: Optional[int] = None
+    homozygote_count: Optional[int] = None
+    population_frequencies: dict[str, dict] = {}
+    gnomad_variant_id: Optional[str] = None
 
 
 class EvidenceResponse(BaseModel):

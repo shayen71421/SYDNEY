@@ -19,6 +19,7 @@ class ACMGService:
         protein_change = variant.protein_change or ""
         clin_sig = (variant.clinical_significance or "").lower()
         review_status = (variant.review_status or "").lower()
+        gnomad_af = variant.gnomad_af
 
         criteria = []
         strengths = {"Very Strong": 4, "Strong": 3, "Moderate": 2, "Supporting": 1}
@@ -37,7 +38,8 @@ class ACMGService:
             pathogenic_score += strengths["Very Strong"]
 
         if "pathogenic" in clin_sig:
-            if "expert panel" in review_status or "multiple submitters" in review_status:
+            has_expert = "expert panel" in review_status or "multiple submitters" in review_status
+            if has_expert:
                 criteria.append({
                     "code": "PS1",
                     "strength": "Strong",
@@ -46,12 +48,17 @@ class ACMGService:
                     "classification": "Pathogenic",
                 })
                 pathogenic_score += strengths["Strong"]
-            elif "conflicting" not in clin_sig:
+            elif "conflicting" not in clin_sig and (gnomad_af is None or gnomad_af < 0.0001):
+                gnomad_evidence = ""
+                if gnomad_af is not None:
+                    gnomad_evidence = f"gnomAD v4 AF: {gnomad_af:.2e} (absent/rare in population databases)"
+                else:
+                    gnomad_evidence = "Variant absent from gnomAD (absent in population databases)"
                 criteria.append({
                     "code": "PM2",
                     "strength": "Moderate",
                     "description": "Absent from population databases (or at extremely low frequency if recessive)",
-                    "evidence": f"ClinVar classification: {variant.clinical_significance}",
+                    "evidence": gnomad_evidence,
                     "classification": "Pathogenic",
                 })
                 pathogenic_score += strengths["Moderate"]
@@ -116,7 +123,7 @@ class ACMGService:
             })
             benign_score += strengths["Supporting"]
 
-        if total_papers == 0:
+        if total_papers == 0 and (gnomad_af is None or gnomad_af < 0.0001):
             criteria.append({
                 "code": "PM2",
                 "strength": "Moderate",

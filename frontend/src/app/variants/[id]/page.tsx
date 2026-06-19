@@ -172,6 +172,37 @@ export default function VariantPage({ params }: { params: Promise<{ id: string }
                   Review Status: {detail.review_status}
                 </p>
               )}
+
+              {detail.gnomad_af !== null && detail.gnomad_af !== undefined ? (
+                <div className="mt-3 rounded-md border border-slate-200 bg-slate-50 p-3 dark:border-slate-700 dark:bg-slate-800/50">
+                  <p className="mb-1 text-xs font-medium text-slate-500">gnomAD v4 Frequency</p>
+                  <div className="flex items-center gap-2">
+                    <span
+                      className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium ${
+                        detail.gnomad_af < 0.0001
+                          ? "bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400"
+                          : detail.gnomad_af < 0.001
+                          ? "bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400"
+                          : "bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400"
+                      }`}
+                    >
+                      {detail.gnomad_af.toExponential(2)}
+                    </span>
+                    <span className="text-sm text-slate-600 dark:text-slate-400">
+                      ({detail.gnomad_af < 0.0001 ? "Rare" : detail.gnomad_af < 0.001 ? "Low" : "Common"})
+                    </span>
+                  </div>
+                  {detail.gnomad_data?.homozygote_count !== undefined && (
+                    <p className="mt-1 text-xs text-slate-500">
+                      Homozygotes: {detail.gnomad_data.homozygote_count}
+                    </p>
+                  )}
+                </div>
+              ) : (
+                <div className="mt-3">
+                  <Badge variant="outline" className="text-xs">Absent from gnomAD</Badge>
+                </div>
+              )}
               {detail.diseases && detail.diseases.length > 0 && (
                 <div className="mt-3">
                   <p className="mb-2 text-sm font-medium text-slate-500">Associated Diseases</p>

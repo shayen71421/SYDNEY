@@ -218,3 +218,151 @@ class TestConfidenceWeights:
         assert result_multi == 0.9
         result_none = engine._score_clinvar_review("")
         assert result_none == 0.0
+
+
+class TestGnomadService:
+    """gnomAD population frequency integration tests."""
+
+    def test_fetch_frequency_no_coordinates(self):
+        from app.services.gnomad_service import GnomadService
+        svc = GnomadService()
+        result = svc.fetch_frequency("TP53", "R175H", None)
+        assert result is None
+
+    def test_fetch_frequency_with_coordinates_absent(self):
+        from app.services.gnomad_service import GnomadService
+        svc = GnomadService()
+        result = svc.fetch_frequency("TP53", "R175H", {
+            "genomic_coordinates": {"chr": "99", "pos": 1, "ref": "A", "alt": "T"}
+        })
+        assert result is None
+
+    @patch("app.services.gnomad_service.httpx.post")
+    def test_cache_write_and_read(self, mock_post):
+        from app.services.gnomad_service import GnomadService
+        svc = GnomadService()
+        cache_key = "TEST_c.1A>T"
+        cache_path = svc._cache_path(cache_key)
+        if cache_path.exists():
+            cache_path.unlink()
+
+        mock_post.return_value.status_code = 200
+        mock_post.return_value.json.return_value = {
+            "data": {
+                "variant": {
+                    "variant_id": "1-100-A-T",
+                    "genome": {
+                        "af": 0.000023, "ac": 5, "an": 217394,
+                        "homozygotes": 0,
+                        "populations": [
+                            {"id": "afr", "af": 0.0001, "ac": 1, "an": 10000, "homozygotes": 0},
+                        ],
+                    },
+                    "exome": None,
+                }
+            }
+        }
+
+        result = svc.fetch_frequency("TEST", "c.1A>T", {
+            "genomic_coordinates": {"chr": "1", "pos": 100, "ref": "A", "alt": "T"}
+        })
+        assert result is not None
+        assert result["allele_frequency"] == 0.000023
+        assert result["homozygote_count"] == 0
+        assert "afr" in result["population_frequencies"]
+
+        cached = svc._load_cache(cache_key)
+        assert cached is not None
+        assert cached["allele_frequency"] == 0.000023
+
+        if cache_path.exists():
+            cache_path.unlink()
+    """PM2 criterion with real gnomAD data."""
+
+    def _build_variant(self, db_session, gnomad_af=None):
+        from app.models.database import Gene, Variant
+        gene = Gene(symbol="BRCA1", full_name="Test Gene")
+        db_session.add(gene)
+        db_session.commit()
+        variant = Variant(
+            gene_id=gene.id,
+            hgvs_c="c.123A>G",
+            protein_change="p.Lys41Arg",
+            clinical_significance="Pathogenic",
+            review_status="criteria provided, single submitter",
+            variant_type="missense",
+            gnomad_af=gnomad_af,
+            gnomad_data={"allele_frequency": gnomad_af} if gnomad_af is not None else None,
+        )
+        db_session.add(variant)
+        db_session.commit()
+        return variant.id
+
+    def test_pm2_triggers_when_af_below_threshold(self, db_session):
+        variant_id = self._build_variant(db_session, gnomad_af=0.00001)
+        from app.services.acmg_service import ACMGService
+        acmg = ACMGService(db_session)
+        result = acmg.classify(variant_id)
+        codes = [c["code"] for c in result["criteria"]]
+        assert "PM2" in codes
+        pm2 = [c for c in result["criteria"] if c["code"] == "PM2"][0]
+        assert "gnomAD" in pm2["evidence"]
+
+    def test_pm2_triggers_when_absent_from_gnomad(self, db_session):
+        variant_id = self._build_variant(db_session, gnomad_af=None)
+        from app.services.acmg_service import ACMGService
+        acmg = ACMGService(db_session)
+        result = acmg.classify(variant_id)
+        codes = [c["code"] for c in result["criteria"]]
+        assert "PM2" in codes
+        pm2 = [c for c in result["criteria"] if c["code"] == "PM2"][0]
+        assert "absent" in pm2["evidence"].lower()
+
+    def test_pm2_not_triggered_when_af_above_threshold(self, db_session):
+        variant_id = self._build_variant(db_session, gnomad_af=0.005)
+        from app.services.acmg_service import ACMGService
+        acmg = ACMGService(db_session)
+        result = acmg.classify(variant_id)
+        codes = [c["code"] for c in result["criteria"]]
+        assert "PM2" not in codes
+
+
+class TestGnomadPipeline:
+    """gnomAD integration in variant pipeline."""
+
+    def test_gnomad_field_stored_after_pipeline(self, db_session):
+        from app.services.variant_service import VariantAnalysisService
+        from unittest.mock import patch, MagicMock
+
+        mock_clinvar = MagicMock()
+        mock_clinvar.fetch_variant_data.return_value = {
+            "clinvar_id": "12345",
+            "clinical_significance": "Pathogenic",
+            "review_status": "criteria provided, single submitter",
+            "genomic_coordinates": {"chr": "17", "pos": 41242954, "ref": "C", "alt": "T"},
+        }
+        mock_pubmed = MagicMock()
+        mock_pubmed.search_papers.return_value = []
+        mock_gnomad = MagicMock()
+        mock_gnomad.fetch_frequency.return_value = {
+            "allele_frequency": 0.000023,
+            "allele_count": 5,
+            "allele_number": 217394,
+            "homozygote_count": 0,
+            "population_frequencies": {},
+        }
+
+        from app.models.database import Variant, Gene
+
+        service = VariantAnalysisService(db_session)
+        service.clinvar = mock_clinvar
+        service.pubmed = mock_pubmed
+        service.gnomad = mock_gnomad
+
+        result = service.analyze_variant("BRCA1 c.5266dupC")
+        assert result is not None
+
+        variant = result["variant"]
+        db_session.refresh(variant)
+        assert variant.gnomad_af == 0.000023
+        assert variant.gnomad_data is not None

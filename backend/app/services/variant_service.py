@@ -7,6 +7,7 @@ from sqlalchemy import func
 from app.models.database import Variant, Gene, Evidence, Paper
 from app.services.clinvar_service import ClinVarService
 from app.services.pubmed_service import PubMedService
+from app.services.gnomad_service import GnomadService
 
 
 class VariantAnalysisService:
@@ -31,6 +32,7 @@ class VariantAnalysisService:
         self.db = db
         self.clinvar = ClinVarService()
         self.pubmed = PubMedService()
+        self.gnomad = GnomadService()
 
     def parse_variant(self, query: str) -> Optional[dict]:
         query = query.strip()
@@ -114,6 +116,12 @@ class VariantAnalysisService:
             variant.review_status = clinvar_data.get("review_status")
             variant.clinvar_data = clinvar_data
             variant.description = clinvar_data.get("description")
+            self.db.commit()
+
+        gnomad_data = self.gnomad.fetch_frequency(parsed["gene"], parsed["change"], clinvar_data)
+        if gnomad_data:
+            variant.gnomad_af = gnomad_data.get("allele_frequency")
+            variant.gnomad_data = gnomad_data
             self.db.commit()
 
         papers = self.pubmed.search_papers(parsed["gene"], parsed["change"])

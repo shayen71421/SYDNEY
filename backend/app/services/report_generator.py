@@ -58,6 +58,12 @@ class PDFReportGenerator:
         elements.append(Paragraph(f"Clinical significance: <b>{sig}</b>", body_style))
         elements.append(Paragraph(f"ClinVar ID: {variant.clinvar_id or 'N/A'}", body_style))
         elements.append(Paragraph(f"Review Status: {variant.review_status or 'N/A'}", body_style))
+        if variant.gnomad_af is not None:
+            af = variant.gnomad_af
+            one_in = int(1 / af) if af > 0 else float("inf")
+            elements.append(Paragraph(f"gnomAD v4 allele frequency: {af:.6f} (1 in {one_in:,})", body_style))
+        else:
+            elements.append(Paragraph("gnomAD v4 allele frequency: Absent from gnomAD", body_style))
         elements.append(Spacer(1, 8))
 
         elements.append(Paragraph("3. Evidence Overview", heading_style))
