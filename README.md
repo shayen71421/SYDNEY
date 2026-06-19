@@ -54,6 +54,7 @@ Sydney is a lightweight web application that helps researchers, students, and cl
 │         │                   ├── ClinVar Service ──▶ NCBI E-utilities  │
 │         │                   ├── PubMed Service  ──▶ NCBI E-utilities  │
 │         │                   ├── AI Summary      ──▶ Groq API          │
+│         │                   ├── gnomAD Service  ──▶ Broad gnomAD v4   │
 │         │                   └── PDF Generator   ──▶ ReportLab         │
 │         ▼                                                             │
 │  OpenAPI: /docs                                                       │
@@ -132,7 +133,27 @@ Update variant record:
   • clinical_significance, clinvar_id, review_status, clinvar_data
 ```
 
-### Step 5: PubMed Retrieval (PubMedService)
+### Step 5: gnomAD Population Frequency (GnomadService)
+```
+gene + variant + clinvar_data (genomic coordinates)
+  ↓
+1. Check local disk cache (data/cache/gnomad/)
+   ↓ if cache miss:
+2. Extract genomic coordinates from ClinVar response
+   • { chr: "17", pos: 7675094, ref: "G", alt: "A" }
+3. Build gnomAD v4 variant ID: "17-7675094-G-A"
+4. Query gnomAD GraphQL API: https://gnomad.broadinstitute.org/api
+   • Returns: allele_frequency, allele_count, allele_number,
+     homozygote_count, population_frequencies (by ancestry)
+5. Store in variant record:
+   • variant.gnomad_af = allele_frequency
+   • variant.gnomad_data = full API response
+6. Cache result as JSON
+   ↓
+If variant not found in gnomAD → graceful None (no error)
+```
+
+### Step 6: PubMed Retrieval (PubMedService)
 ```
 gene + variant + disease ("breast cancer")
   ↓
@@ -153,7 +174,7 @@ For each paper (all 8 genes share the same pipeline — no gene-specific logic n
   • Create Evidence record (variant_id, paper_id, evidence_type="literature")
 ```
 
-### Step 6: Evidence Scoring (EvidenceScoringService)
+### Step 7: Evidence Scoring (EvidenceScoringService)
 ```
 For each evidence item:
   ↓
@@ -170,7 +191,7 @@ evidence_score = (0.50 × relevance) + (0.30 × study_quality) + (0.20 × recenc
 Score range: 0.0 - 1.0 (displayed as 0-100)
 ```
 
-### Step 7: Confidence Calculation (ConfidenceEngine)
+### Step 8: Confidence Calculation (ConfidenceEngine)
 ```
 All evidence items for variant
   ↓
@@ -195,7 +216,7 @@ Level mapping:
   score == 0   → Insufficient Evidence
 ```
 
-### Step 8: Report Generation
+### Step 9: Report Generation
 ```
 variant + evidence + confidence
   ↓
@@ -208,7 +229,7 @@ PDF generation (on demand):
     Confidence Assessment
 ```
 
-### Step 9: AI Summary (optional, requires Groq API key)
+### Step 10: AI Summary (optional, requires Groq API key)
 ```
 variant + evidence + confidence
   ↓
@@ -222,7 +243,7 @@ Groq API call: Llama 3.3 70B
     Confidence Assessment
 ```
 
-### Step 10: Research Gap Detection (ResearchGapDetector)
+### Step 11: Research Gap Detection (ResearchGapDetector)
 ```
 Analyze evidence distribution
   ↓
@@ -395,7 +416,56 @@ Recent searches are stored in localStorage (client-side only) and displayed as c
 
 **Caching:** Same scheme as ClinVar, stored in `data/cache/pubmed/` with 24-hour TTL.
 
-### 4. Evidence Scoring Engine (Feature 6)
+### 4. gnomAD v4 Population Frequency (Feature 5)
+
+**Endpoint:** Broad Institute gnomAD GraphQL API (`https://gnomad.broadinstitute.org/api`)
+
+**Flow:**
+1. After ClinVar retrieves variant data, genomic coordinates are extracted from the ClinVar response
+2. Coordinates formatted as `{chr}-{pos}-{ref}-{alt}` gnomAD variant ID
+3. GraphQL query requests genome & exome AF, AC, AN, homozygotes, and per-population breakdowns
+4. Genome AF preferred; exome AF used as fallback
+
+**GraphQL Query:**
+```graphql
+query VariantFrequency($datasetId: DatasetId!, $variantId: String!) {
+  variant(dataset: $datasetId, id: $variantId) {
+    variant_id
+    genome {
+      af ac an homozygotes
+      populations { id af ac an homozygotes }
+    }
+    exome {
+      af ac an homozygotes
+      populations { id af ac an homozygotes }
+    }
+  }
+}
+```
+
+**Dataset:** `gnomad_v4`
+
+**Database Fields:**
+| Column | Type | Description |
+|--------|------|-------------|
+| `gnomad_af` | FLOAT | Global allele frequency (genome or exome) |
+| `gnomad_data` | JSON | Full API response including per-population breakdown |
+
+**Color Coding (Frontend):**
+| AF Range | Color | Badge Label |
+|----------|-------|-------------|
+| < 0.0001 | Red | Rare |
+| 0.0001–0.001 | Amber | Low |
+| > 0.001 | Green | Common |
+| Not found | Grey outline | Absent from gnomAD |
+
+**Caching:** Same scheme as ClinVar, stored in `data/cache/gnomad/` with 24-hour TTL. Cache key: `{gene}_{variant}`.
+
+**API Endpoint:** `GET /api/v1/variants/{id}/gnomad` — returns full population breakdown by ancestry group.
+
+**Configuration:** No additional environment variables required. Uses the existing ClinVar data pipeline for coordinate extraction.
+
+### 5. Evidence Scoring Engine (Feature 6)
 
 **Formula:**
 
@@ -413,7 +483,7 @@ EvidenceScore = 0.50 × relevance + 0.30 × study_quality + 0.20 × recency
 
 **Score Display:** Scores are multiplied by 100 for the UI (0–100 scale).
 
-### 5. Confidence Engine (Feature 10)
+### 6. Confidence Engine (Feature 10)
 
 **Formula:**
 
@@ -439,7 +509,7 @@ ConfidenceScore = (0.25 × volume_score) + (0.35 × quality_score) + (0.25 × ag
 | 0.01–0.39 | Low | Limited evidence, further studies needed |
 | 0.00 | Insufficient Evidence | No supporting papers found; no hallucination |
 
-### 6. AI Research Summary (Feature 9)
+### 7. AI Research Summary (Feature 9)
 
 **Provider:** Groq API with Llama 3.3 70B (requires `GROQ_API_KEY`)
 
@@ -463,7 +533,7 @@ ConfidenceScore = (0.25 × volume_score) + (0.35 × quality_score) + (0.25 × ag
 - No retrieved evidence → model returns "No evidence available for this variant"
 - All claims should reference supporting PMIDs
 
-### 7. Knowledge Relationships View (Feature 8)
+### 8. Knowledge Relationships View (Feature 8)
 
 **Implementation:** Custom SVG-based graph visualization (no external graph library dependency)
 
@@ -481,7 +551,7 @@ ConfidenceScore = (0.25 × volume_score) + (0.35 × quality_score) + (0.25 × ag
 
 **Data Source:** `/api/v1/graph/{variant_id}` endpoint constructs nodes and edges from the database.
 
-### 8. Research Gap Detection (Feature 11)
+### 9. Research Gap Detection (Feature 11)
 
 **Rule-Based Analysis (`ResearchGapDetector.analyze_gaps`):**
 
@@ -497,7 +567,7 @@ ConfidenceScore = (0.25 × volume_score) + (0.35 × quality_score) + (0.25 × ag
 
 **Output:** Gap list + well-studied boolean + summary text + study type distribution.
 
-### 9. PDF Report Export (Feature 12)
+### 10. PDF Report Export (Feature 12)
 
 **Library:** ReportLab
 
@@ -505,10 +575,11 @@ ConfidenceScore = (0.25 × volume_score) + (0.35 × quality_score) + (0.25 × ag
 1. **Variant Header** — Gene, HGVS notation, clinical significance, confidence level
 2. **Executive Summary** — AI-generated or evidence overview
 3. **Clinical Significance** — ClinVar data with review status
-4. **Evidence Overview** — Volume, quality, agreement scores
-5. **Supporting Studies** — Top 10 papers with titles, PMIDs, years, scores
-6. **Disease Associations** — Disease names from ClinVar
-7. **Confidence Assessment** — Level + score + detailed breakdown
+4. **gnomAD Frequency** — Population allele frequency with 1-in-N formatting (or "Absent from gnomAD")
+5. **Evidence Overview** — Volume, quality, agreement scores
+6. **Supporting Studies** — Top 10 papers with titles, PMIDs, years, scores
+7. **Disease Associations** — Disease names from ClinVar
+8. **Confidence Assessment** — Level + score + detailed breakdown
 
 **Generation:** Synchronous, returns PDF as download (~4KB for average reports).
 
@@ -538,6 +609,7 @@ http://localhost:8000/api/v1
 | `GET` | `/variants/{id}/evidence-provenance` | Per-paper score contribution breakdown | None |
 | `GET` | `/variants/{id}/acmg` | ACMG-inferred variant classification | None |
 | `GET` | `/variants/{id}/classification-timeline` | Historical ClinVar classification changes | None |
+| `GET` | `/variants/{id}/gnomad` | gnomAD v4 allele frequency by ancestry | None |
 | `GET` | `/variants/{id}/report/pdf` | Download PDF report | None |
 | `GET` | `/graph/{id}` | Knowledge graph data | None |
 | `POST` | `/compare` | Compare two variants side by side | None |
@@ -669,7 +741,8 @@ r"^(GENE)\s+(\d+ins[A-Z]+)$"                         # Legacy ins notation
 **Critical Implementation Details:**
 - `classify(variant_id)` — Evaluates ACMG/AMP 2015 criteria against available variant data (limited to evidence we have: ClinVar significance, publication volume, variant type, and review status). Does NOT replace full ACMG interpretation which requires population frequency, segregation, functional studies, and family history.
 - Detects null variants (PVS1) via variant_type + HGVS c. + protein_change pattern matching
-- Uses ClinVar significance and review status for PS1, BS1, BP4, PM2
+- Uses ClinVar significance and review status for PS1, BS1, BP4
+- PM2 triggered when gnomad_af < 0.0001 (or variant absent from gnomAD); evidence text shows real AF value or "absent from gnomAD"
 - Evidence volume thresholds trigger PP4 (≥5 papers) and PS4 (≥10 papers)
 - Missense pathogenic variants trigger PP3
 - Scoring: Very Strong=4, Strong=3, Moderate=2, Supporting=1
@@ -824,7 +897,7 @@ pytest ../tests/backend/test_api.py -v
 | Test Suite | Tests | What It Tests |
 |------------|-------|---------------|
 | `test_api.py` | 18 | Health, dashboard, search, 404 handling, evidence, report, graph, gaps, OpenAPI, compare, trends, why-matters, full pipeline |
-| `test_services.py` | 15 | Variant parsing (7), gene lookup (2), evidence scoring (3), confidence engine (2), research gaps (1) |
+| `test_services.py` | 35 | Variant parsing (7), gene lookup (2), evidence scoring (3), confidence engine (2), research gaps (1), gnomAD service (8), batch study type (2), new genes (8), confidence weights (2) |
 
 ### Manual QA Test Suite
 
@@ -911,10 +984,10 @@ Displayed in the Overview tab below the confidence assessment cards:
 
 | Component | Weight | Calculation |
 |-----------|--------|-------------|
-| Evidence Volume | ×25% | `papers_count × 25` |
-| Evidence Quality | ×35% | `avg_study_quality × 100 × 35` |
-| Study Agreement | ×25% | `consensus_percent × 100 × 25` |
-| ClinVar Review Strength | ×15% | `clinvar_review_strength × 100 × 15` |
+| Evidence Volume | ×20% | `papers_count × 20` |
+| Evidence Quality | ×40% | `avg_study_quality × 100 × 40` |
+| Study Agreement | ×30% | `consensus_percent × 100 × 30` |
+| ClinVar Review Strength | ×10% | `clinvar_review_strength × 100 × 10` |
 | **Total** | **100%** | Sum of all four |
 
 Each component has a proportional bar and shows its raw value.
@@ -954,17 +1027,17 @@ Returns each paper with its contribution breakdown:
 | Field | Description |
 |-------|-------------|
 | `evidence_score` | Combined score (0.50×relevance + 0.30×quality + 0.20×recency) |
-| `volume_contrib` | Volume component = 0.25 × volume_score (normalized to the variant's evidence volume tier) |
-| `quality_contrib` | Quality component = 0.35 × study_quality_score |
-| `agreement_contrib` | Agreement component = 0.25 × study_agreement |
-| `review_contrib` | ClinVar review component = 0.15 × clinvar_review_strength |
+| `volume_contrib` | Volume component = 0.20 × volume_score (normalized to the variant's evidence volume tier) |
+| `quality_contrib` | Quality component = 0.40 × study_quality_score |
+| `agreement_contrib` | Agreement component = 0.30 × study_agreement |
+| `review_contrib` | ClinVar review component = 0.10 × clinvar_review_strength |
 | `total_contrib` | Sum of all four components |
 | `contribution_pct` | `(total_contrib / confidence_score) × 100` — percent of total confidence |
 
 **Frontend:** The Score card in the Confidence Assessment section is clickable. Clicking opens a modal with:
 - Per-paper contribution bars (color-coded by contribution %)
 - Raw scores (relevance, quality, recency, evidence score)
-- Contribution component details (volume ×25%, quality ×35%, agreement ×25%, review ×15%)
+- Contribution component details (volume ×20%, quality ×40%, agreement ×30%, review ×10%)
 - Direct link to PubMed for each paper
 
 ### ACMG-Inferred Classification
@@ -980,7 +1053,7 @@ Automated variant interpretation inspired by ACMG/AMP 2015 guidelines, adapted f
 | PVS1 | Very Strong | Null variant (frameshift, nonsense, del/ins/dup/* in HGVS or protein change) in a gene where LOF is known mechanism | 4 |
 | PS1 | Strong | Pathogenic in ClinVar with expert panel or multi-submitter review status | 3 |
 | PS4 | Strong | ≥10 supporting publications (well-studied variant) | 3 |
-| PM2 | Moderate | Pathogenic in ClinVar without conflicting submitters | 2 |
+| PM2 | Moderate | Pathogenic in ClinVar (or zero papers) AND gnomAD AF < 0.0001 (or absent from gnomAD) | 2 |
 | PM4 | Moderate | In-frame deletion/insertion (not frameshift) | 2 |
 | PP3 | Supporting | Missense variant classified as pathogenic | 1 |
 | PP4 | Supporting | ≥5 supporting publications | 1 |
@@ -1084,6 +1157,7 @@ sydney/
 │   │   │   ├── ai_summary.py          # Groq API integration (Llama 3.3 70B)
 │   │   │   ├── research_gaps.py       # Rule-based gap detection
 │   │   │   ├── acmg_service.py        # ACMG-inferred variant classification
+│   │   │   ├── gnomad_service.py      # gnomAD v4 GraphQL frequency lookup
 │   │   │   └── report_generator.py    # ReportLab PDF generation
 │   │   │
 │   │   └── db/
