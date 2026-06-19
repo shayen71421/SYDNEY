@@ -3,6 +3,7 @@ from sqlalchemy.orm import Session
 from sqlalchemy import func
 from typing import Optional
 from datetime import datetime
+from pathlib import Path
 
 from app.models.database import Variant, Gene, Evidence, Paper, Disease, Report as ReportModel
 from app.models.schemas import (
@@ -176,6 +177,7 @@ def get_variant_report(variant_id: int, db: Session = Depends(get_db)):
         evidence_volume=report.evidence_volume,
         evidence_quality=report.evidence_quality,
         study_agreement=report.study_agreement,
+        clinvar_review_strength=report.clinvar_review_strength or 0.0,
         executive_summary=report.executive_summary,
         clinical_significance=report.clinical_significance or variant.clinical_significance,
         disease_associations=disease_assocs,
@@ -514,6 +516,35 @@ def get_classification_timeline(variant_id: int, db: Session = Depends(get_db)):
         current_review_status=variant.review_status or "No assertion",
         history=history,
     )
+
+
+@router.delete("/variants/{variant_id}")
+def delete_variant(variant_id: int, db: Session = Depends(get_db)):
+    variant = db.query(Variant).filter(Variant.id == variant_id).first()
+    if not variant:
+        raise HTTPException(status_code=404, detail="Variant not found")
+
+    gene = db.query(Gene).filter(Gene.id == variant.gene_id).first()
+    change = variant.hgvs_c or variant.protein_change or ""
+    if gene and change:
+        from app.services.clinvar_service import ClinVarService
+        from app.services.gnomad_service import GnomadService
+        from app.services.pubmed_service import PubMedService
+        safe = change.replace("/", "_").replace(" ", "_").replace(".", "_")
+        cache_dirs = [
+            ClinVarService.CACHE_DIR,
+            GnomadService.CACHE_DIR,
+            PubMedService.CACHE_DIR,
+        ]
+        for cache_dir in cache_dirs:
+            for p in Path(cache_dir).glob(f"{gene.symbol}_{safe}*"):
+                p.unlink(missing_ok=True)
+
+    db.query(Evidence).filter(Evidence.variant_id == variant_id).delete()
+    db.query(ReportModel).filter(ReportModel.variant_id == variant_id).delete()
+    db.delete(variant)
+    db.commit()
+    return {"deleted": variant_id}
 
 
 @router.get("/variants")

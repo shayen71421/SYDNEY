@@ -38,38 +38,34 @@ class GnomadService:
 
         coords = self._extract_coordinates(clinvar_data) if clinvar_data else None
         if not coords:
-            return None
+            return {"_no_coordinates": True}
 
         variant_id = f"{coords['chr']}-{coords['pos']}-{coords['ref']}-{coords['alt']}"
 
         query = """
         query VariantFrequency($datasetId: DatasetId!, $variantId: String!) {
-          variant(dataset: $datasetId, id: $variantId) {
+          variant(variantId: $variantId, dataset: $datasetId) {
             variant_id
             genome {
               af
               ac
               an
-              homozygotes
+              homozygote_count
               populations {
                 id
-                af
                 ac
                 an
-                homozygotes
               }
             }
             exome {
               af
               ac
               an
-              homozygotes
+              homozygote_count
               populations {
                 id
-                af
                 ac
                 an
-                homozygotes
               }
             }
           }
@@ -77,7 +73,7 @@ class GnomadService:
         """
 
         variables = {
-            "datasetId": "gnomad_v4",
+            "datasetId": "gnomad_r4",
             "variantId": variant_id,
         }
 
@@ -94,7 +90,8 @@ class GnomadService:
             data = resp.json()
             variant_data = data.get("data", {}).get("variant")
             if not variant_data:
-                return None
+                self._save_cache(cache_key, {"_not_found": True})
+                return {"_not_found": True}
 
             genome = variant_data.get("genome") or {}
             exome = variant_data.get("exome") or {}
@@ -108,18 +105,19 @@ class GnomadService:
             pop_source = genome if genome.get("populations") else exome
             for pop in (pop_source.get("populations") or []):
                 pop_id = pop.get("id", "unknown")
+                ac = pop.get("ac")
+                an = pop.get("an")
                 populations[pop_id] = {
-                    "af": pop.get("af"),
-                    "ac": pop.get("ac"),
-                    "an": pop.get("an"),
-                    "homozygotes": pop.get("homozygotes"),
+                    "af": ac / an if ac is not None and an and an > 0 else None,
+                    "ac": ac,
+                    "an": an,
                 }
 
             result = {
                 "allele_frequency": allele_frequency,
                 "allele_count": genome.get("ac") if genome.get("ac") is not None else exome.get("ac"),
                 "allele_number": genome.get("an") if genome.get("an") is not None else exome.get("an"),
-                "homozygote_count": genome.get("homozygotes") if genome.get("homozygotes") is not None else exome.get("homozygotes"),
+                "homozygote_count": genome.get("homozygote_count") if genome.get("homozygote_count") is not None else exome.get("homozygote_count"),
                 "population_frequencies": populations,
                 "gnomad_variant_id": variant_data.get("variant_id"),
             }

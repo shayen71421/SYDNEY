@@ -146,21 +146,19 @@ class ClinVarService:
                             if disease not in result["diseases"]:
                                 result["diseases"].append(disease)
 
-            for measure in root.iter("Measure"):
-                sl = measure.find("SequenceLocation")
-                if sl is not None:
-                    loc_chr = sl.get("Chr")
-                    loc_pos = sl.get("positionVCF")
-                    loc_ref = sl.get("referenceAllele")
-                    loc_alt = sl.get("alternateAllele")
-                    if loc_chr and loc_pos and loc_ref and loc_alt:
-                        result["genomic_coordinates"] = {
-                            "chr": loc_chr,
-                            "pos": int(loc_pos),
-                            "ref": loc_ref.upper(),
-                            "alt": loc_alt.upper(),
-                        }
-                        break
+            for sl in root.iter("SequenceLocation"):
+                loc_chr = sl.get("Chr")
+                loc_pos = sl.get("positionVCF")
+                loc_ref = sl.get("referenceAllele") or sl.get("referenceAlleleVCF")
+                loc_alt = sl.get("alternateAllele") or sl.get("alternateAlleleVCF")
+                if loc_chr and loc_pos and loc_ref and loc_alt:
+                    result["genomic_coordinates"] = {
+                        "chr": loc_chr,
+                        "pos": int(loc_pos),
+                        "ref": loc_ref.upper(),
+                        "alt": loc_alt.upper(),
+                    }
+                    break
 
         except ET.ParseError:
             pass

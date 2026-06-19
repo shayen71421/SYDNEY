@@ -88,4 +88,7 @@ export const api = {
 
   getClassificationTimeline: (id: number) =>
     fetchJSON<ClassificationTimelineResponse>(`/api/v1/variants/${id}/classification-timeline`),
+
+  deleteVariant: (id: number) =>
+    fetchJSON<{ deleted: number }>(`/api/v1/variants/${id}`, { method: "DELETE" }),
 };

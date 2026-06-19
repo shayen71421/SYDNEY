@@ -235,16 +235,19 @@ class TestGnomadService:
     def test_fetch_frequency_no_coordinates(self):
         from app.services.gnomad_service import GnomadService
         svc = GnomadService()
-        result = svc.fetch_frequency("TP53", "R175H", None)
-        assert result is None
+        result = svc.fetch_frequency("TP53_NONE", "NONE", None)
+        assert result == {"_no_coordinates": True}
 
-    def test_fetch_frequency_with_coordinates_absent(self):
+    @patch("app.services.gnomad_service.httpx.post")
+    def test_fetch_frequency_with_coordinates_absent(self, mock_post):
         from app.services.gnomad_service import GnomadService
         svc = GnomadService()
-        result = svc.fetch_frequency("TP53", "R175H", {
+        mock_post.return_value.status_code = 200
+        mock_post.return_value.json.return_value = {"data": {"variant": None}}
+        result = svc.fetch_frequency("TP53_ABSENT", "NONE", {
             "genomic_coordinates": {"chr": "99", "pos": 1, "ref": "A", "alt": "T"}
         })
-        assert result is None
+        assert result == {"_not_found": True}
 
     @patch("app.services.gnomad_service.httpx.post")
     def test_cache_write_and_read(self, mock_post):
@@ -262,9 +265,9 @@ class TestGnomadService:
                     "variant_id": "1-100-A-T",
                     "genome": {
                         "af": 0.000023, "ac": 5, "an": 217394,
-                        "homozygotes": 0,
+                        "homozygote_count": 0,
                         "populations": [
-                            {"id": "afr", "af": 0.0001, "ac": 1, "an": 10000, "homozygotes": 0},
+                            {"id": "afr", "ac": 1, "an": 10000},
                         ],
                     },
                     "exome": None,

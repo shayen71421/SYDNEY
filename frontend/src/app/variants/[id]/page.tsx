@@ -2,6 +2,7 @@
 
 import { use, useState } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import {
   ArrowLeft,
   Download,
@@ -14,6 +15,7 @@ import {
   BarChart3,
   ArrowLeftRight,
   Sparkles,
+  Trash2,
 } from "lucide-react";
 import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/Card";
 import { Badge } from "@/components/ui/Badge";
@@ -51,6 +53,9 @@ export default function VariantPage({ params }: { params: Promise<{ id: string }
   const { data: acmg } = useACMGClassification(variantId);
   const { data: timeline } = useClassificationTimeline(variantId);
   const summaryMutation = useAISummary();
+  const [deleting, setDeleting] = useState(false);
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+  const router = useRouter();
 
   if (detailLoading) {
     return (
@@ -66,6 +71,18 @@ export default function VariantPage({ params }: { params: Promise<{ id: string }
         Variant not found.
       </div>
     );
+  }
+
+  async function handleDelete() {
+    setDeleting(true);
+    try {
+      await api.deleteVariant(variantId);
+      router.push("/");
+    } catch {
+      setDeleting(false);
+      setShowDeleteConfirm(false);
+      alert("Failed to delete variant");
+    }
   }
 
   async function handleDownloadPdf() {
@@ -97,12 +114,21 @@ export default function VariantPage({ params }: { params: Promise<{ id: string }
     return <AlertTriangle className="h-4 w-4" />;
   };
 
+  const volumeScore = report
+    ? report.evidence_volume >= 20 ? 1.0
+      : report.evidence_volume >= 10 ? 0.8
+      : report.evidence_volume >= 5 ? 0.6
+      : report.evidence_volume >= 3 ? 0.4
+      : report.evidence_volume >= 1 ? 0.2
+      : 0
+    : 0;
+
   const totalScore = report
     ? Math.round(
-        report.evidence_volume * 25 +
-          report.evidence_quality * 100 * 35 +
-          report.study_agreement * 100 * 25 +
-          (report.clinvar_review_strength || 0) * 100 * 15
+        volumeScore * 20 +
+          report.evidence_quality * 40 +
+          report.study_agreement * 30 +
+          (report.clinvar_review_strength || 0) * 10
       )
     : 0;
 
@@ -197,6 +223,10 @@ export default function VariantPage({ params }: { params: Promise<{ id: string }
                       Homozygotes: {detail.gnomad_data.homozygote_count}
                     </p>
                   )}
+                </div>
+              ) : detail.gnomad_data?._no_coordinates ? (
+                <div className="mt-3">
+                  <Badge variant="outline" className="text-xs">Coordinates unavailable</Badge>
                 </div>
               ) : (
                 <div className="mt-3">
@@ -491,13 +521,22 @@ export default function VariantPage({ params }: { params: Promise<{ id: string }
 
   return (
     <div>
-      <Link
-        href="/"
-        className="mb-4 flex items-center gap-1 text-sm text-slate-500 hover:text-slate-700"
-      >
-        <ArrowLeft className="h-4 w-4" />
-        Back to search
-      </Link>
+      <div className="mb-4 flex items-center justify-between">
+        <Link
+          href="/"
+          className="flex items-center gap-1 text-sm text-slate-500 hover:text-slate-700"
+        >
+          <ArrowLeft className="h-4 w-4" />
+          Back to search
+        </Link>
+        <button
+          onClick={() => setShowDeleteConfirm(true)}
+          className="flex items-center gap-1 text-sm text-red-500 hover:text-red-700"
+        >
+          <Trash2 className="h-4 w-4" />
+          Delete
+        </button>
+      </div>
 
       <div className="mb-6">
         <h1 className="text-2xl font-bold text-slate-900 dark:text-white">
@@ -512,6 +551,32 @@ export default function VariantPage({ params }: { params: Promise<{ id: string }
 
       {showProvenance && provenance && (
         <EvidenceProvenanceModal data={provenance} onClose={() => setShowProvenance(false)} />
+      )}
+
+      {showDeleteConfirm && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
+          <div className="w-full max-w-sm rounded-lg border border-slate-200 bg-white p-6 shadow-lg dark:border-slate-700 dark:bg-slate-800">
+            <h3 className="mb-2 text-lg font-semibold text-slate-900 dark:text-white">Delete Variant</h3>
+            <p className="mb-4 text-sm text-slate-500">
+              Delete this variant and all its evidence data? This cannot be undone.
+            </p>
+            <div className="flex justify-end gap-3">
+              <button
+                onClick={() => setShowDeleteConfirm(false)}
+                className="rounded-lg border border-slate-200 px-4 py-2 text-sm text-slate-600 hover:bg-slate-50 dark:border-slate-600 dark:text-slate-400 dark:hover:bg-slate-700"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleDelete}
+                disabled={deleting}
+                className="rounded-lg bg-red-600 px-4 py-2 text-sm text-white hover:bg-red-700 disabled:opacity-50"
+              >
+                {deleting ? "Deleting..." : "Delete"}
+              </button>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );
