@@ -88,9 +88,57 @@
   {
     "variant": "PTEN c.697C>T",
     "expected": {
+      "min_papers": 1,
+      "confidence": ["Moderate"],
+      "clinical_significance": "Pathogenic/Likely pathogenic"
+    }
+  },
+  {
+    "variant": "EGFR c.2573T>G",
+    "expected": {
+      "min_papers": 10,
+      "confidence": ["Moderate", "High"],
+      "clinical_significance": "drug response"
+    }
+  },
+  {
+    "variant": "KRAS c.35G>A",
+    "expected": {
+      "min_papers": 5,
+      "confidence": ["Moderate", "High"],
+      "clinical_significance": "Pathogenic"
+    }
+  },
+  {
+    "variant": "ALK c.3522C>A",
+    "expected": {
       "min_papers": 0,
       "confidence": ["Insufficient Evidence"],
-      "clinical_significance": "Pathogenic/Likely pathogenic"
+      "clinical_significance": "Pathogenic"
+    }
+  },
+  {
+    "variant": "BRAF c.1799T>A",
+    "expected": {
+      "min_papers": 10,
+      "confidence": ["Moderate", "High"],
+      "clinical_significance": "Likely benign"
+    }
+  },
+  {
+    "variant": "MLH1 c.350C>T",
+    "expected": {
+      "min_papers": 3,
+      "confidence": ["Moderate", "High"],
+      "clinical_significance": "Uncertain significance"
+    }
+  },
+  {
+    "variant": "MSH2 c.2038C>T",
+    "expected": {
+      "min_papers": 10,
+      "confidence": ["Moderate", "High"],
+      "clinical_significance": "Uncertain significance"
     }
   }
 ]

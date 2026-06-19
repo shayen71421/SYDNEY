@@ -28,6 +28,23 @@ class VariantAnalysisService:
         "msh2": "MSH2", "msh2": "MSH2",
     }
 
+    GENE_DISEASES = {
+        "BRCA1": "breast cancer",
+        "BRCA2": "breast cancer",
+        "TP53": "cancer",
+        "CDH1": "gastric cancer",
+        "PALB2": "breast cancer",
+        "CHEK2": "cancer",
+        "ATM": "cancer",
+        "PTEN": "Cowden syndrome",
+        "EGFR": "lung cancer",
+        "KRAS": "pancreatic cancer",
+        "ALK": "lung cancer",
+        "BRAF": "melanoma",
+        "MLH1": "colorectal cancer",
+        "MSH2": "colorectal cancer",
+    }
+
     def __init__(self, db: Session):
         self.db = db
         self.clinvar = ClinVarService()
@@ -124,7 +141,7 @@ class VariantAnalysisService:
             variant.gnomad_data = gnomad_data
             self.db.commit()
 
-        papers = self.pubmed.search_papers(parsed["gene"], parsed["change"])
+        papers = self.pubmed.search_papers(parsed["gene"], parsed["change"], disease=self.GENE_DISEASES.get(parsed["gene"].upper(), "cancer"))
         for paper_data in papers:
             existing = self.db.query(Paper).filter(Paper.pmid == paper_data["pmid"]).first()
             if not existing:

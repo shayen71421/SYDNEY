@@ -423,13 +423,13 @@ def get_evidence_provenance(variant_id: int, db: Session = Depends(get_db)):
     items = []
     crs = conf.get("clinvar_review_strength", 0.0)
     for ev in top_evidence:
-        volume_contrib = 0.25 * (1.0 if conf["evidence_volume"] >= 20 else
+        volume_contrib = 0.20 * (1.0 if conf["evidence_volume"] >= 20 else
                                  0.8 if conf["evidence_volume"] >= 10 else
                                  0.6 if conf["evidence_volume"] >= 5 else
                                  0.4 if conf["evidence_volume"] >= 3 else 0.2)
-        quality_contrib = 0.35 * (ev["study_quality_score"] or 0)
-        agreement_contrib = 0.25 * (conf["study_agreement"])
-        review_contrib = 0.15 * crs
+        quality_contrib = 0.40 * (ev["study_quality_score"] or 0)
+        agreement_contrib = 0.30 * (conf["study_agreement"])
+        review_contrib = 0.10 * crs
         total_contrib = volume_contrib + quality_contrib + agreement_contrib + review_contrib
         contribution_pct = (total_contrib / conf["score"] * 100) if conf["score"] > 0 else 0
 

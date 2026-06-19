@@ -4,7 +4,7 @@
 
 Sydney is a lightweight web application that helps researchers, students, and clinicians understand genetic variants by aggregating evidence from ClinVar, PubMed, and biomedical literature. It generates structured reports with confidence scoring, AI summaries, and research gap analysis — without hallucinating results.
 
-**Supported genes (8):** BRCA1, BRCA2, TP53, CDH1, PALB2, CHEK2, ATM, PTEN — covering breast, ovarian, gastric, and related hereditary cancer syndromes.
+**Supported genes (14):** BRCA1, BRCA2, TP53, CDH1, PALB2, CHEK2, ATM, PTEN, EGFR, KRAS, ALK, BRAF, MLH1, MSH2 — covering breast, ovarian, gastric, lung, colorectal, and related hereditary cancer syndromes.
 
 ---
 
@@ -48,7 +48,7 @@ Sydney is a lightweight web application that helps researchers, students, and cl
 │                                                                       │
 │  ┌──────────────┐    ┌──────────────┐    ┌────────────────────┐       │
 │  │ API Routes   │───▶│ Services     │───▶│ Database           │       │
-│  │ (routes.py)  │    │ (8 services) │    │ (SQLAlchemy/SQLite)│       │
+│  │ (routes.py)  │    │ (10 services)│    │ (SQLAlchemy/SQLite)│       │
 │  └──────┬───────┘    └──────┬───────┘    └────────────────────┘       │
 │         │                   │                                         │
 │         │                   ├── ClinVar Service ──▶ NCBI E-utilities  │
@@ -81,7 +81,7 @@ When a user searches for a variant (e.g., `TP53 R175H`), the following pipeline 
 ```
 User Input: "TP53 R175H"
   ↓
-Regex matching against 8 supported genes and 6 notation patterns:
+Regex matching against 14 supported genes and 6 notation patterns:
   • c. notation:   BRCA1 c.5266dupC, CDH1 c.1901C>T
   • p. notation:   TP53 p.R175H
   • 1-letter code: TP53 R175H
@@ -95,7 +95,7 @@ If match → { gene: "TP53", change: "R175H" }
 
 ### Step 2: Gene Resolution
 ```
-Gene symbol "TP53" (or CDH1, PALB2, CHEK2, ATM, PTEN, BRCA1, BRCA2)
+Gene symbol "TP53", "BRCA1", "BRCA2", "CDH1", "PALB2", "CHEK2", "ATM", "PTEN", "EGFR", "KRAS", "ALK", "BRAF", "MLH1", "MSH2" (or alias P53 → TP53)
   ↓
 Query genes table → if not found, create with metadata:
   • symbol, full_name, chromosome, description
@@ -155,11 +155,12 @@ If variant not found in gnomAD → graceful None (no error)
 
 ### Step 6: PubMed Retrieval (PubMedService)
 ```
-gene + variant + disease ("breast cancer")
+gene + variant + disease (mapped per gene — see table below)
   ↓
 1. Check local disk cache (data/cache/pubmed/)
    ↓ if cache miss:
-2. ESearch: "(TP53[Title/Abstract]) AND (R175H[Text Word]) AND (breast cancer[MeSH])"
+2. ESearch example: "(TP53[Title/Abstract]) AND (R175H[Text Word]) AND (cancer[MeSH])"
+   • Disease term is gene-specific: BRCA1→"breast cancer", EGFR→"lung cancer", etc.
    • Limit: 20 results, sorted by relevance
 3. EFetch: Get XML with titles, authors, abstracts
 4. Infer study type via batched Groq call (all papers in one prompt):
@@ -169,7 +170,7 @@ gene + variant + disease ("breast cancer")
      → Falls back entire batch to keyword-based matching (see table below)
 5. Cache results as JSON
    ↓
-For each paper (all 8 genes share the same pipeline — no gene-specific logic needed beyond the symbol):
+For each paper (all 14 genes share the same pipeline — no gene-specific logic needed beyond the symbol):
   • Create Paper record (pmid, title, authors, journal, year, abstract, study_type)
   • Create Evidence record (variant_id, paper_id, evidence_type="literature")
 ```
@@ -207,7 +208,7 @@ evidence_quality = average study_quality_score across all papers
   ↓
 study_agreement = consistency of clinical_significance across papers
   ↓
-confidence_score = (0.25 × volume) + (0.35 × quality) + (0.25 × agreement) + (0.15 × clinvar_review_strength)
+confidence_score = (0.20 × volume) + (0.40 × quality) + (0.30 × agreement) + (0.10 × clinvar_review_strength)
   ↓
 Level mapping:
   score >= 0.70 → High
@@ -299,13 +300,14 @@ Optional AI analysis of research directions
         │               │ clin_sig         │       │ study_type       │
         │               │ disease_assoc(J) │       │ keywords (JSON)  │
         │               │ mechanism        │       │ created_at       │
-        │               │ evidence_overview│       └──────────────────┘
-        │               │ confidence_assess│
-        │               │ research_gaps(J) │
-        │               │ ai_summary       │
-        │               │ report_data (J)  │
-        │               │ created_at       │
-        │               └──────────────────┘
+│               │ evidence_overview│       └──────────────────┘
+│               │ confidence_assess│
+│               │ clinvar_review_strength │
+│               │ research_gaps(J) │
+│               │ ai_summary       │
+│               │ report_data (J)  │
+│               │ created_at       │
+│               └──────────────────┘
         │
         ├─── gene_papers (M:N join) ─── papers
         │
@@ -383,8 +385,9 @@ Recent searches are stored in localStorage (client-side only) and displayed as c
 
 **Search Query Construction:**
 ```
-(gene[Title/Abstract]) AND (variant[Text Word]) AND (breast cancer[MeSH])
+(gene[Title/Abstract]) AND (variant[Text Word]) AND (disease[MeSH])
 ```
+Disease term is mapped per gene: BRCA1/BRCA2/PALB2 → `breast cancer`, CDH1 → `gastric cancer`, EGFR/ALK → `lung cancer`, KRAS → `pancreatic cancer`, BRAF → `melanoma`, PTEN → `Cowden syndrome`, MLH1/MSH2 → `colorectal cancer`, others → `cancer`.
 
 **Result Limit:** 20 papers (configurable via `MAX_PUBMED_RESULTS`)
 
@@ -423,27 +426,27 @@ Recent searches are stored in localStorage (client-side only) and displayed as c
 **Flow:**
 1. After ClinVar retrieves variant data, genomic coordinates are extracted from the ClinVar response
 2. Coordinates formatted as `{chr}-{pos}-{ref}-{alt}` gnomAD variant ID
-3. GraphQL query requests genome & exome AF, AC, AN, homozygotes, and per-population breakdowns
+3. GraphQL query requests genome & exome AF (computed from ac/an), AC, AN, homozygote_count, and per-population breakdowns
 4. Genome AF preferred; exome AF used as fallback
 
 **GraphQL Query:**
 ```graphql
 query VariantFrequency($datasetId: DatasetId!, $variantId: String!) {
-  variant(dataset: $datasetId, id: $variantId) {
+  variant(variantId: $variantId, dataset: $datasetId) {
     variant_id
     genome {
-      af ac an homozygotes
-      populations { id af ac an homozygotes }
+      af ac an homozygote_count
+      populations { id af ac an }
     }
     exome {
-      af ac an homozygotes
-      populations { id af ac an homozygotes }
+      af ac an homozygote_count
+      populations { id af ac an }
     }
   }
 }
 ```
 
-**Dataset:** `gnomad_v4`
+**Dataset:** `gnomad_r4`
 
 **Database Fields:**
 | Column | Type | Description |
@@ -488,17 +491,17 @@ EvidenceScore = 0.50 × relevance + 0.30 × study_quality + 0.20 × recency
 **Formula:**
 
 ```
-ConfidenceScore = (0.25 × volume_score) + (0.35 × quality_score) + (0.25 × agreement_score) + (0.15 × clinvar_review_strength)
+ConfidenceScore = (0.20 × volume_score) + (0.40 × quality_score) + (0.30 × agreement_score) + (0.10 × clinvar_review_strength)
 ```
 
 **Components:**
 
 | Component | Weight | Calculation |
 |-----------|--------|-------------|
-| Evidence Volume | 25% | Logarithmic scale based on paper count: 0 papers = 0.0, 1-2 = 0.2, 3-4 = 0.4, 5-9 = 0.6, 10-19 = 0.8, 20+ = 1.0 |
-| Evidence Quality | 35% | Average `study_quality_score` across all papers (0.0–1.0) |
-| Study Agreement | 25% | Proportion of papers with the same clinical significance classification (0.0–1.0) |
-| ClinVar Review Strength | 15% | Maps `review_status` to a score: expert panel = 1.0, multi-submitter = 0.9, single submitter = 0.7, conflicting = 0.5, no assertion criteria = 0.3, no assertion = 0.0 |
+| Evidence Volume | 20% | Logarithmic scale based on paper count: 0 papers = 0.0, 1-2 = 0.2, 3-4 = 0.4, 5-9 = 0.6, 10-19 = 0.8, 20+ = 1.0 |
+| Evidence Quality | 40% | Average `study_quality_score` across all papers (0.0–1.0) |
+| Study Agreement | 30% | Proportion of papers with the same clinical significance classification (0.0–1.0) |
+| ClinVar Review Strength | 10% | Maps `review_status` to a score: expert panel = 1.0, multi-submitter = 0.9, single submitter = 0.7, conflicting = 0.5, no assertion criteria = 0.3, no assertion = 0.0 |
 
 **Levels:**
 
@@ -540,7 +543,7 @@ ConfidenceScore = (0.25 × volume_score) + (0.35 × quality_score) + (0.25 × ag
 **Entity Types (color-coded):**
 | Type | Color | Description |
 |------|-------|-------------|
-| Gene | Blue (#3b82f6) | BRCA1, BRCA2, TP53, CDH1, PALB2, CHEK2, ATM, PTEN |
+| Gene | Blue (#3b82f6) | BRCA1, BRCA2, TP53, CDH1, PALB2, CHEK2, ATM, PTEN, EGFR, KRAS, ALK, BRAF, MLH1, MSH2 |
 | Variant | Purple (#8b5cf6) | The specific mutation |
 | Paper | Green (#059669) | PubMed articles |
 | Disease | Amber (#d97706) | Associated conditions |
@@ -613,6 +616,7 @@ http://localhost:8000/api/v1
 | `GET` | `/variants/{id}/report/pdf` | Download PDF report | None |
 | `GET` | `/graph/{id}` | Knowledge graph data | None |
 | `POST` | `/compare` | Compare two variants side by side | None |
+| `DELETE` | `/variants/{id}` | Delete variant and its cache files | None |
 
 ### Request/Response Examples
 
@@ -712,7 +716,7 @@ r"^(GENE)\s+(\d+ins[A-Z]+)$"                         # Legacy ins notation
 - `_batch_infer_study_types` sends title + abstract per paper, parses JSON array response, validates length matches paper count
 - On failure (Groq error, unparseable JSON, length mismatch): falls back **entire batch** to `_infer_study_type` keyword matching — never silently drops papers
 - `_infer_study_type` checks keywords in priority order (Clinical Trial → Meta-Analysis → Case Report → ... → Research Article)
-- Caches results with gene+variant+disease as composite key
+- Caches results with gene+variant+disease as composite key (disease-aware caching)
 
 ### `EvidenceScoringService`
 
@@ -892,12 +896,12 @@ pytest ../tests/backend/test_api.py -v
 
 ### Test Coverage
 
-**33 tests covering:**
+**48 tests covering:**
 
 | Test Suite | Tests | What It Tests |
 |------------|-------|---------------|
-| `test_api.py` | 18 | Health, dashboard, search, 404 handling, evidence, report, graph, gaps, OpenAPI, compare, trends, why-matters, full pipeline |
-| `test_services.py` | 35 | Variant parsing (7), gene lookup (2), evidence scoring (3), confidence engine (2), research gaps (1), gnomAD service (8), batch study type (2), new genes (8), confidence weights (2) |
+| `test_api.py` | 19 | Health, dashboard, search, 404 handling, evidence, report, graph, gaps, OpenAPI, compare, trends, why-matters, full pipeline |
+| `test_services.py` | 29 | Variant parsing (7), gene lookup (2), evidence scoring (3), confidence engine (2), research gaps (1), gnomAD service (8), batch study type (2), new genes (8), confidence weights (2) |
 
 ### Manual QA Test Suite
 
@@ -926,21 +930,27 @@ Regression test the full retrieval pipeline against known variants.
 
 ### `benchmark.json`
 
-11 test cases across 8 genes with expected results:
+17 test cases across 14 genes with expected results (benchmark passes may require calibration):
 
 | Variant | Min Papers | Expected Confidence | Expected Significance |
 |---------|-----------|-------------------|----------------------|
 | TP53 R175H | ≥15 | Moderate, High | Pathogenic |
-| BRCA1 c.5266dupC | ≥15 | High | Pathogenic |
-| BRCA2 c.5946delT | ≥10 | Moderate, High | Likely benign |
-| TP53 R248W | ≥10 | Moderate, High | Pathogenic |
+| BRCA1 c.5266dupC | ≥15 | High | Uncertain significance |
+| BRCA2 c.5946delT | ≥10 | Moderate, High | no classifications from unflagged records |
+| TP53 R248W | ≥10 | Moderate, High | Likely pathogenic |
 | TP53 R273H | ≥10 | Moderate, High | Pathogenic |
-| TP53 R999X | 0 | Insufficient Evidence | null |
-| CDH1 c.1901C>T | ≥2 | Low, Moderate | Pathogenic/Likely pathogenic |
+| TP53 R999X | 0 | Insufficient Evidence | None |
+| CDH1 c.1901C>T | ≥2 | Low, Moderate | Uncertain significance |
 | PALB2 c.1592delT | ≥3 | Moderate, High | Pathogenic |
-| CHEK2 c.1100delC | ≥5 | Moderate, High | Conflicting classifications |
-| ATM c.7271T>G | ≥3 | Moderate, High | Pathogenic |
-| PTEN c.697C>T | 0 | Insufficient Evidence | Pathogenic/Likely pathogenic |
+| CHEK2 c.1100delC | ≥5 | Moderate, High | Pathogenic |
+| ATM c.7271T>G | ≥3 | Moderate, High | Uncertain significance |
+| PTEN c.697C>T | ≥1 | Moderate | Pathogenic/Likely pathogenic |
+| EGFR c.2573T>G | ≥10 | Moderate, High | drug response |
+| KRAS c.35G>A | ≥5 | Moderate, High | Pathogenic |
+| ALK c.3522C>A | 0 | Insufficient Evidence | Pathogenic |
+| BRAF c.1799T>A | ≥10 | Moderate, High | Likely benign |
+| MLH1 c.350C>T | ≥3 | Moderate, High | Uncertain significance |
+| MSH2 c.2038C>T | ≥10 | Moderate, High | Uncertain significance |
 
 ### `benchmark.py`
 
@@ -984,13 +994,13 @@ Displayed in the Overview tab below the confidence assessment cards:
 
 | Component | Weight | Calculation |
 |-----------|--------|-------------|
-| Evidence Volume | ×20% | `papers_count × 20` |
-| Evidence Quality | ×40% | `avg_study_quality × 100 × 40` |
-| Study Agreement | ×30% | `consensus_percent × 100 × 30` |
-| ClinVar Review Strength | ×10% | `clinvar_review_strength × 100 × 10` |
-| **Total** | **100%** | Sum of all four |
+| Evidence Volume | ×20% | `volume_score × 20` (tiered: ≥20→1.0, ≥10→0.8, ≥5→0.6, ≥3→0.4, ≥1→0.2) |
+| Evidence Quality | ×40% | `avg_study_quality × 40` |
+| Study Agreement | ×30% | `consensus_percent × 30` |
+| ClinVar Review Strength | ×10% | `clinvar_review_strength × 10` |
+| **Total** | **100%** | Sum of all four (0–100 scale) |
 
-Each component has a proportional bar and shows its raw value.
+Each component has a proportional bar and shows its weighted contribution (0–100 scale total).
 
 ### Publication Trend Analysis
 
@@ -1140,12 +1150,12 @@ sydney/
 │   │   │
 │   │   ├── models/
 │   │   │   ├── __init__.py
-│   │   │   ├── database.py            # SQLAlchemy models (8 tables)
+│   │   │   ├── database.py            # SQLAlchemy models (9 tables)
 │   │   │   └── schemas.py             # Pydantic API schemas
 │   │   │
 │   │   ├── api/
 │   │   │   ├── __init__.py
-│   │   │   └── routes.py              # 17 REST endpoints
+│   │   │   └── routes.py              # 19 REST endpoints
 │   │   │
 │   │   ├── services/
 │   │   │   ├── __init__.py
@@ -1223,8 +1233,8 @@ sydney/
 │
 ├── tests/
 │   ├── backend/
-│   │   ├── test_api.py                # 13 API integration tests
-│   │   └── test_services.py           # 14 unit tests
+│   │   ├── test_api.py                # 19 API integration tests
+│   │   └── test_services.py           # 29 unit tests
 │   └── frontend/
 │
 ├── data/                              # Database + cache (gitignored)
@@ -1235,7 +1245,7 @@ sydney/
 ├── .gitignore
 ├── pyproject.toml                     # Pytest config
 ├── run.sh                             # Single-command launcher
-├── benchmark.json                     # 11 benchmark test cases (8 genes)
+├── benchmark.json                     # 17 benchmark test cases (14 genes)
 ├── benchmark.py                       # Regression test runner
 └── README.md
 ```
