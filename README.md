@@ -30,34 +30,34 @@ Sydney is a lightweight web application that helps researchers, students, and cl
 ## Architecture Overview
 
 ```
-┌─────────────────────────────────────────────────────────────────┐
-│                        Browser                                   │
-│  ┌─────────────────────────────────────────────────────────────┐ │
-│  │  Next.js 15 App Router                                      │ │
-│  │  • React 19 + TypeScript                                    │ │
-│  │  • Tailwind CSS + Dark Mode                                 │ │
-│  │  • React Query (caching, refetch)                           │ │
-│  │  • Recharts (evidence charts)                               │ │
-│  │  • SVG graph (knowledge relationships)                      │ │
-│  └──────────────────────┬──────────────────────────────────────┘ │
-└─────────────────────────┼────────────────────────────────────────┘
+┌───────────────────────────────────────────────────────────────────┐
+│                        Browser                                    │
+│  ┌─────────────────────────────────────────────────────────────┐  │
+│  │  Next.js 15 App Router                                      │  │
+│  │  • React 19 + TypeScript                                    │  │
+│  │  • Tailwind CSS + Dark Mode                                 │  │
+│  │  • React Query (caching, refetch)                           │  │
+│  │  • Recharts (evidence charts)                               │  │
+│  │  • SVG graph (knowledge relationships)                      │  │
+│  └──────────────────────┬──────────────────────────────────────┘  │
+└─────────────────────────┼─────────────────────────────────────────┘
                           │ HTTP (localhost:3000 → localhost:8000)
                           ▼
-┌─────────────────────────────────────────────────────────────────┐
-│  FastAPI Backend                                                │
-│                                                                  │
-│  ┌─────────────┐    ┌──────────────┐    ┌────────────────────┐  │
-│  │ API Routes   │───▶│ Services     │───▶│ Database           │  │
-│  │ (routes.py)  │    │ (8 services) │    │ (SQLAlchemy/SQLite)│  │
-│  └──────┬───────┘    └──────┬───────┘    └────────────────────┘  │
-│         │                   │                                     │
-│         │                   ├── ClinVar Service ──▶ NCBI E-utilities
-│         │                   ├── PubMed Service  ──▶ NCBI E-utilities
-│         │                   ├── AI Summary      ──▶ Groq API
-│         │                   └── PDF Generator   ──▶ ReportLab
-│         ▼
-│  OpenAPI: /docs
-└─────────────────────────────────────────────────────────────────┘
+┌───────────────────────────────────────────────────────────────────────┐
+│  FastAPI Backend                                                      │
+│                                                                       │
+│  ┌──────────────┐    ┌──────────────┐    ┌────────────────────┐       │
+│  │ API Routes   │───▶│ Services     │───▶│ Database           │       │
+│  │ (routes.py)  │    │ (8 services) │    │ (SQLAlchemy/SQLite)│       │
+│  └──────┬───────┘    └──────┬───────┘    └────────────────────┘       │
+│         │                   │                                         │
+│         │                   ├── ClinVar Service ──▶ NCBI E-utilities  │
+│         │                   ├── PubMed Service  ──▶ NCBI E-utilities  │
+│         │                   ├── AI Summary      ──▶ Groq API          │
+│         │                   └── PDF Generator   ──▶ ReportLab         │
+│         ▼                                                             │
+│  OpenAPI: /docs                                                       │
+└───────────────────────────────────────────────────────────────────────┘
 ```
 
 ### Component Responsibilities
