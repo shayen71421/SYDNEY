@@ -215,9 +215,18 @@ class TestConfidenceWeights:
         result = engine._score_clinvar_review("reviewed by expert panel")
         assert result == 1.0
         result_multi = engine._score_clinvar_review("criteria provided, multiple submitters, no conflicts")
-        assert result_multi == 0.9
+        assert result_multi == 0.9, f"Expected 0.9, got {result_multi}"
         result_none = engine._score_clinvar_review("")
         assert result_none == 0.0
+
+    def test_clinvar_review_with_non_breaking_spaces(self, db_session):
+        engine = ConfidenceEngine(db_session)
+        result = engine._score_clinvar_review("criteria provided, multiple submitters, no conflicts")
+        assert result == 0.9, f"Expected 0.9 for clean string, got {result}"
+        result_nbsp = engine._score_clinvar_review("criteria\u00a0provided,\u00a0multiple\u00a0submitters,\u00a0no\u00a0conflicts")
+        assert result_nbsp == 0.9, f"Expected 0.9 for nbsp string, got {result_nbsp}"
+        result_extra = engine._score_clinvar_review("  criteria provided, multiple submitters, no conflicts  ")
+        assert result_extra == 0.9, f"Expected 0.9 for padded string, got {result_extra}"
 
 
 class TestGnomadService:

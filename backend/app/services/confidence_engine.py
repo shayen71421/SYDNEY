@@ -92,7 +92,11 @@ class ConfidenceEngine:
         return 0.0
 
     def _score_clinvar_review(self, review_status: str) -> float:
-        status = review_status.lower().strip() if review_status else ""
+        if not review_status:
+            return 0.0
+        normalized = review_status.lower().strip()
+        normalized = normalized.replace("\xa0", " ").replace("\u200b", "").replace("\u00a0", " ")
+        normalized = " ".join(normalized.split())
         mapping = {
             "reviewed by expert panel": 1.0,
             "criteria provided, multiple submitters, no conflicts": 0.9,
@@ -102,7 +106,21 @@ class ConfidenceEngine:
             "no assertion": 0.0,
             "no assertion provided": 0.0,
         }
-        return mapping.get(status, 0.0)
+        result = mapping.get(normalized)
+        if result is not None:
+            return result
+        # Fallback: prefix/contains matching for strings that don't match exactly
+        if "expert panel" in normalized:
+            return 1.0
+        if "multiple submitters" in normalized and "no conflicts" in normalized:
+            return 0.9
+        if "single submitter" in normalized:
+            return 0.7
+        if "conflicting" in normalized:
+            return 0.5
+        if "no assertion" in normalized:
+            return 0.0
+        return 0.0
 
     def _calculate_agreement(self, evidence_list: list) -> float:
         if not evidence_list:
