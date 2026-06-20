@@ -6,6 +6,19 @@ Sydney is a lightweight web application that helps researchers, students, and cl
 
 **Supported genes (14):** BRCA1, BRCA2, TP53, CDH1, PALB2, CHEK2, ATM, PTEN, EGFR, KRAS, ALK, BRAF, MLH1, MSH2 — covering breast, ovarian, gastric, lung, colorectal, and related hereditary cancer syndromes.
 
+## Why I Built This
+
+Genetic variant interpretation is one of the most consequential tasks in modern medicine — a single classification of "Pathogenic" or "Uncertain significance" can change a patient's surgical decisions, screening schedule, and family planning. Yet the evidence behind these classifications is scattered across ClinVar, PubMed, and dozens of specialist databases, with no single tool that aggregates, scores, and explains it in one place.
+
+I built Sydney to solve that aggregation problem — and to learn how to build a production-grade full-stack application along the way. It gave me hands-on experience with:
+
+- Integrating real biomedical APIs (NCBI E-utilities, gnomAD GraphQL) that have quirks, rate limits, and undocumented edge cases (non-breaking spaces in XML, deprecated rettype formats)
+- Designing a transparent, explainable scoring system where every number can be traced back to a source — no black boxes
+- Building AI features responsibly: hallucination prevention, evidence-grounded prompts, and graceful degradation when the API is unavailable
+- Writing tests and benchmarks for a data pipeline where "correct" depends on live external data
+
+The name Sydney is a backronym: **S**ystematic **Y**ielding of **D**isease-associated Ge**n**omic **E**vidence and Discover**Y**.
+
 ---
 
 ## Table of Contents
@@ -1199,7 +1212,7 @@ sydney/
 │   │   │   │   ├── Card.tsx           # Card container
 │   │   │   │   └── Tabs.tsx           # Tab navigation
 │   │   │   ├── variant/
-│   │   │   │   │   │   ├── ConfidenceBreakdown.tsx # Weighted component bars
+│   │   │   │   ├── ConfidenceBreakdown.tsx # Weighted component bars
 │   │   │   │   ├── EvidenceChart.tsx       # Recharts bar chart
 │   │   │   │   ├── EvidenceTable.tsx       # Sortable evidence table
 │   │   │   │   ├── KnowledgeGraph.tsx      # SVG relationship graph
@@ -1207,7 +1220,6 @@ sydney/
 │   │   │   │   ├── PublicationTrends.tsx   # Recharts year-by-year chart
 │   │   │   │   ├── VariantCompare.tsx      # Side-by-side comparison
 │   │   │   │   ├── WhyMatters.tsx          # AI biological explanation
-│   │   │   │   ├── EvidenceProvenanceModal.tsx  # Per-paper contribution modal
 │   │   │   │   ├── EvidenceProvenanceModal.tsx  # Per-paper contribution modal
 │   │   │   │   ├── ACMGClassification.tsx       # ACMG-inferred criteria display
 │   │   │   │   └── ClassificationTimeline.tsx   # ClinVar classification history
@@ -1260,14 +1272,20 @@ In `backend/app/services/variant_service.py`, add to the gene metadata dictionar
 
 ```python
 gene_data = {
-    "BRCA1": ("BRCA1", "Breast Cancer Gene 1",                              "17", "Tumor suppressor involved in DNA repair"),
-    "BRCA2": ("BRCA2", "Breast Cancer Gene 2",                              "13", "Tumor suppressor involved in DNA repair"),
-    "TP53":  ("TP53",  "Tumor Protein P53",                                 "17", "Tumor suppressor regulating cell cycle"),
-    "CDH1":  ("CDH1",  "Cadherin 1",                                        "16", "Cell adhesion; germline → hereditary diffuse gastric cancer"),
-    "PALB2": ("PALB2", "Partner And Localizer of BRCA2",                    "16", "Fanconi anemia group N; BRCA2-interacting DNA repair"),
-    "CHEK2": ("CHEK2", "Checkpoint Kinase 2",                               "22", "Cell cycle checkpoint kinase; DNA damage response"),
-    "ATM":   ("ATM",   "ATM Serine/Threonine Kinase",                       "11", "DNA damage response kinase; double-strand break repair"),
-    "PTEN":  ("PTEN",  "Phosphatase and Tensin Homolog",                    "10", "Tumor suppressor phosphatase; PI3K/AKT pathway"),
+    "BRCA1":  ("BRCA1", "Breast Cancer Gene 1",                              "17", "Tumor suppressor involved in DNA repair"),
+    "BRCA2":  ("BRCA2", "Breast Cancer Gene 2",                              "13", "Tumor suppressor involved in DNA repair"),
+    "TP53":   ("TP53",  "Tumor Protein P53",                                 "17", "Tumor suppressor regulating cell cycle"),
+    "CDH1":   ("CDH1",  "Cadherin 1",                                        "16", "Cell adhesion; germline → hereditary diffuse gastric cancer"),
+    "PALB2":  ("PALB2", "Partner And Localizer of BRCA2",                    "16", "Fanconi anemia group N; BRCA2-interacting DNA repair"),
+    "CHEK2":  ("CHEK2", "Checkpoint Kinase 2",                               "22", "Cell cycle checkpoint kinase; DNA damage response"),
+    "ATM":    ("ATM",   "ATM Serine/Threonine Kinase",                       "11", "DNA damage response kinase; double-strand break repair"),
+    "PTEN":   ("PTEN",  "Phosphatase and Tensin Homolog",                    "10", "Tumor suppressor phosphatase; PI3K/AKT pathway"),
+    "EGFR":   ("EGFR",  "Epidermal Growth Factor Receptor",                   "7", "Receptor tyrosine kinase; lung cancer and glioblastoma"),
+    "KRAS":   ("KRAS",  "KRAS Proto-Oncogene GTPase",                        "12", "Small GTPase; MAPK signaling; pancreatic/colorectal/lung"),
+    "ALK":    ("ALK",   "ALK Receptor Tyrosine Kinase",                       "2", "Receptor tyrosine kinase; fusions drive lung cancer"),
+    "BRAF":   ("BRAF",  "B-Raf Proto-Oncogene Serine/Threonine Kinase",       "7", "Serine/threonine kinase in MAPK pathway; V600E driver"),
+    "MLH1":   ("MLH1",  "MutL Homolog 1",                                     "3", "DNA mismatch repair; germline → Lynch syndrome"),
+    "MSH2":   ("MSH2",  "MutS Homolog 2",                                     "2", "DNA mismatch repair; germline → Lynch syndrome"),
     # Add your new gene here:
 }
 ```
@@ -1284,25 +1302,52 @@ GENE_ALIASES = {
     "chek2": "CHEK2", "chek2": "CHEK2",
     "atm":   "ATM",   "atm": "ATM",
     "pten":  "PTEN",  "pten": "PTEN",
+    "egfr":  "EGFR",  "egfr": "EGFR",
+    "kras":  "KRAS",  "kras": "KRAS",
+    "alk":   "ALK",   "alk": "ALK",
+    "braf":  "BRAF",  "braf": "BRAF",
+    "mlh1":  "MLH1",  "mlh1": "MLH1",
+    "msh2":  "MSH2",  "msh2": "MSH2",
     # Add your new gene alias here:
 }
 ```
 
-### Step 3: Update Regex Validation (frontend)
+### Step 3: Add Gene Disease Mapping (PubMed search relevance)
+
+In the same file, add the disease term used for PubMed queries:
+
+```python
+GENE_DISEASES = {
+    "BRCA1": "breast cancer",
+    "BRCA2": "breast cancer",
+    "PALB2": "breast cancer",
+    "CDH1":  "gastric cancer",
+    "EGFR":  "lung cancer",
+    "ALK":   "lung cancer",
+    "KRAS":  "pancreatic cancer",
+    "BRAF":  "melanoma",
+    "MLH1":  "colorectal cancer",
+    "MSH2":  "colorectal cancer",
+    "PTEN":  "Cowden syndrome",
+    # Others default to "cancer"
+}
+```
+
+### Step 4: Update Regex Validation (frontend)
 
 In `frontend/src/app/page.tsx`, update the validation regex:
 
 ```typescript
-const valid = /^(BRCA1|BRCA2|TP53|P53|CDH1|PALB2|CHEK2|ATM|PTEN)\s/i.test(trimmed);
+const valid = /^(BRCA1|BRCA2|TP53|P53|CDH1|PALB2|CHEK2|ATM|PTEN|EGFR|KRAS|ALK|BRAF|MLH1|MSH2)\s/i.test(trimmed);
 ```
 
-### Step 4: Add Example Suggestions (optional)
+### Step 5: Add Example Suggestions (optional)
 
 In the same file, add clickable examples:
 
 ```typescript
-<span onClick={() => setQuery("CDH1 c.1901C>T")}>CDH1 c.1901C>T</span>
-<span onClick={() => setQuery("PALB2 c.1592delT")}>PALB2 c.1592delT</span>
+<span onClick={() => setQuery("EGFR c.2573T>G")}>EGFR c.2573T&gt;G</span>
+<span onClick={() => setQuery("BRAF c.1799T>A")}>BRAF c.1799T&gt;A</span>
 ```
 
 **That's it.** The architecture automatically handles:
