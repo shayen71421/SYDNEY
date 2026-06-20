@@ -286,28 +286,28 @@ Optional AI analysis of research directions
         │               │ updated_at       │                │
         │               └────────┬─────────┘                │
         │                        │                          │
-        │               ┌────────┴─────────┐       ┌────────┴─────────┐
-        │               │     reports      │       │     papers       │
-        │               ├──────────────────┤       ├──────────────────┤
-        │               │ id (PK)          │       │ id (PK)          │
-        │               │ variant_id (FK)  │       │ pmid (UQ, idx)   │
-        │               │ confidence_level │       │ title            │
-        │               │ confidence_score │       │ authors          │
-        │               │ evidence_volume  │       │ journal          │
-        │               │ evidence_quality │       │ year             │
-        │               │ study_agreement  │       │ abstract         │
-        │               │ exec_summary     │       │ doi              │
-        │               │ clin_sig         │       │ study_type       │
-        │               │ disease_assoc(J) │       │ keywords (JSON)  │
-        │               │ mechanism        │       │ created_at       │
-│               │ evidence_overview│       └──────────────────┘
-│               │ confidence_assess│
-│               │ clinvar_review_strength │
-│               │ research_gaps(J) │
-│               │ ai_summary       │
-│               │ report_data (J)  │
-│               │ created_at       │
-│               └──────────────────┘
+        │        ┌───────────────┴─────────┐       ┌────────┴─────────┐
+        │        │            reports      │       │     papers       │
+        │        ├─────────────────────────┤       ├──────────────────┤
+        │        │ id (PK)                 │       │ id (PK)          │
+        │        │ variant_id (FK)         │       │ pmid (UQ, idx)   │
+        │        │ confidence_level        │       │ title            │
+        │        │ confidence_score        │       │ authors          │
+        │        │ evidence_volume         │       │ journal          │
+        │        │ evidence_quality        │       │ year             │
+        │        │ study_agreement         │       │ abstract         │
+        │        │ exec_summary            │       │ doi              │
+        │        │ clin_sig                │       │ study_type       │
+        │        │ disease_assoc(J)        │       │ keywords (JSON)  │
+        │        │ mechanism               │       │ created_at       │
+        │        │ evidence_overview       │       └──────────────────┘
+        │        │ confidence_assess       │
+        │        │ clinvar_review_strength │
+        │        │        research_gaps(J) │
+        │        │ ai_summary              │
+        │        │ report_data (J)         │
+        │        │ created_at              │
+        │        └─────────────────────────┘
         │
         ├─── gene_papers (M:N join) ─── papers
         │
